@@ -12,7 +12,7 @@ description: >
 # faa-generate-solution
 
 Given a scenario, I (Claude) design + implement + deploy + verify a complete solution on the
-running `/home/jmenning/faa-fast-slow` stack. The **6 SWIM feeds and the base Feldera pipeline
+running `/home/jmenning/fast-triage-deep-analysis` stack. The **6 SWIM feeds and the base Feldera pipeline
 `arrival-capacity` are constant — never edit `faa_program.sql` or the feeds.** Everything
 generated is ADDITIVE: a new Continuum product, a new SAM solution, EP registration.
 
