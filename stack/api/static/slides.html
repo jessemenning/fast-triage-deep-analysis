@@ -60,6 +60,16 @@
               color:var(--sky);font-family:var(--mono);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;
               padding:2px 11px;border-radius:999px}
   .stackarrow{color:var(--muted);font-size:20px;text-align:center;line-height:0}
+  /* ── layer + bracket icons (Lucide, ISC; stroke=currentColor themes to layer color) ── */
+  .layer-head{display:flex;align-items:center;gap:14px}
+  .layer .ico{width:30px;height:30px;flex:0 0 auto}
+  .l-agent .ico{color:var(--green)}
+  .l-cont .ico{color:var(--sky)}
+  .l-mesh .ico{color:var(--muted)}
+  .fbracket .ico{width:18px;height:18px;flex:0 0 auto}
+  .fb-mesh .ico{color:var(--muted)}
+  .fb-cont .ico{color:var(--sky)}
+  .fb-sam .ico{color:var(--green)}
 
   /* ── Slide 3: data layer feeding many programs ── */
   .flow{display:flex;align-items:center;justify-content:center;gap:4vw;width:100%;max-width:96vw}
@@ -85,6 +95,16 @@
   .arow.out{color:var(--green)}
   .arow.in{color:var(--orange)}
   .arow .ar{width:22px;text-align:center}
+  /* ── line icons on data / consumer / card / bridge elements (Lucide, ISC) ── */
+  .col .box .ico{width:22px;height:22px;flex:0 0 auto}
+  .col.srcs .box .ico{color:var(--sky)}
+  .col.cons .box .ico{color:var(--green)}
+  .arow .ico{width:18px;height:18px;flex:0 0 auto}
+  .fs-card .ico{width:26px;height:26px;flex:0 0 auto}
+  .fs-card.fast .ico{color:var(--orange)}
+  .fs-card.slow .ico{color:var(--green)}
+  .am-mcp .ico{width:17px;height:17px;flex:0 0 auto;color:var(--sky)}
+  .bridge .ico{width:44px;height:44px;color:var(--green)}
 
   /* ── Slide 3: the funnel ── */
   .funnel{display:flex;flex-direction:column;align-items:center;gap:12px;width:min(900px,90vw)}
@@ -184,7 +204,9 @@
   .em{display:flex;flex-direction:column;align-items:center;gap:26px;width:min(1200px,94vw)}
   .em-ends{display:flex;flex-wrap:nowrap;justify-content:center;gap:10px;width:100%}
   .em-end{font-size:15px;font-weight:600;white-space:nowrap;color:var(--sky);background:var(--panel2);
-          border:1px solid var(--line);border-left:3px solid var(--sky);border-radius:10px;padding:11px 14px}
+          border:1px solid var(--line);border-left:3px solid var(--sky);border-radius:10px;padding:11px 14px;
+          display:inline-flex;align-items:center;gap:7px}
+  .em-end .ico{width:16px;height:16px;flex:0 0 auto}
   .em-core{width:100%;text-align:center;border:2px solid var(--green);border-radius:16px;
            background:linear-gradient(180deg,rgba(0,200,149,.18),rgba(0,200,149,.05));box-shadow:0 0 40px rgba(0,200,149,.2);
            padding:22px;font-size:30px;font-weight:700;color:var(--green)}
@@ -221,15 +243,15 @@
   <!-- 1 · three layers -->
   <section class="slide active">
     <div class="topbar plat">Real-time AI Platform</div>
-    <h2 class="headline">Move. <span style="color:var(--sky)">Understand.</span> Act.</h2>
+    <h2 class="headline">Move. <span style="color:var(--sky)">Understand.</span> Respond.</h2>
     <div class="platform">
       <div class="platform-label">Solace Real-time AI Platform</div>
       <div class="layers">
-        <div class="layer l-agent"><div class="t">Agent Mesh</div><div class="s">act</div></div>
+        <div class="layer l-agent"><div class="layer-head"><svg class="ico" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M9 5V2.6C9 2.26863 9.26863 2 9.6 2H9.9C10.2314 2 10.5 2.26863 10.5 2.6V5H13V3.6C13 3.26863 13.2686 3 13.6 3H13.9C14.2314 3 14.5 3.26863 14.5 3.6V5L18.4 5C18.7314 5 19 5.26863 19 5.6V9H21.4C21.7314 9 22 9.26863 22 9.6V9.9C22 10.2314 21.7314 10.5 21.4 10.5H19V13H20.4C20.7314 13 21 13.2686 21 13.6V13.9C21 14.2314 20.7314 14.5 20.4 14.5H19V18.4C19 18.7314 18.7314 19 18.4 19H15V20.5H16.9C17.2314 20.5 17.5 20.7686 17.5 21.1V21.4C17.5 21.7314 17.2314 22 16.9 22H14.1C13.7686 22 13.5 21.7314 13.5 21.4V19H11.5V21.4C11.5 21.7314 11.2314 22 10.9 22H10.6C10.2686 22 10 21.7314 10 21.4V19H5.6C5.26863 19 5 18.7314 5 18.4V15.5H3.6C3.26863 15.5 3 15.2314 3 14.9V14.6C3 14.2686 3.26863 14 3.6 14H5L5 11.5H2.6C2.26863 11.5 2 11.2314 2 10.9V10.6C2 10.2686 2.26863 10 2.6 10H5V5.6C5 5.26863 5.26863 5 5.6 5H9ZM11.7453 9.3908C11.6845 9.55503 11.555 9.68451 11.3908 9.74529L9.52069 10.4373C8.99832 10.6306 8.99832 11.3694 9.52069 11.5627L11.3908 12.2547C11.555 12.3155 11.6845 12.445 11.7453 12.6092L12.4373 14.4793C12.6306 15.0017 13.3694 15.0017 13.5627 14.4793L14.2547 12.6092C14.3155 12.445 14.445 12.3155 14.6092 12.2547L16.4793 11.5627C17.0017 11.3694 17.0017 10.6306 16.4793 10.4373L14.6092 9.74529C14.445 9.68451 14.3155 9.55503 14.2547 9.3908L13.5627 7.5207C13.3694 6.99833 12.6306 6.99833 12.4373 7.5207L11.7453 9.3908ZM7.93099 14.2855C8.09522 14.2247 8.2247 14.0952 8.28547 13.931L8.43729 13.5207C8.63059 12.9983 9.36942 12.9983 9.56271 13.5207L9.71453 13.931C9.7753 14.0952 9.90479 14.2247 10.069 14.2855L10.4793 14.4373C11.0017 14.6306 11.0017 15.3694 10.4793 15.5627L10.069 15.7145C9.90479 15.7753 9.7753 15.9048 9.71453 16.069L9.56271 16.4793C9.36942 17.0017 8.63059 17.0017 8.43729 16.4793L8.28547 16.069C8.2247 15.9048 8.09522 15.7753 7.93099 15.7145L7.52071 15.5627C6.99833 15.3694 6.99833 14.6306 7.52071 14.4373L7.93099 14.2855Z" fill="currentColor"/></svg><div class="t">Agent Mesh</div></div><div class="s">respond</div></div>
         <div class="stackarrow">▲</div>
-        <div class="layer l-cont"><div class="t">Continuum</div><div class="s">understand</div></div>
+        <div class="layer l-cont"><div class="layer-head"><svg class="ico" viewBox="-46 -46 92 92" xmlns="http://www.w3.org/2000/svg"><circle cx="0" cy="0" r="18" fill="none" stroke="currentColor" stroke-width="3.5"/><circle cx="0" cy="0" r="30" fill="none" stroke="currentColor" stroke-width="2.8" opacity="0.6"/><circle cx="0" cy="0" r="42" fill="none" stroke="currentColor" stroke-width="2.2" opacity="0.32"/><circle cx="0" cy="0" r="7" fill="currentColor"/></svg><div class="t">Continuum</div></div><div class="s">understand</div></div>
         <div class="stackarrow">▲</div>
-        <div class="layer l-mesh"><div class="t">Event Mesh</div><div class="s">move</div></div>
+        <div class="layer l-mesh"><div class="layer-head"><svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><circle cx="53.49" cy="35.9" r="7.2" fill="currentColor"/><path d="m38.1,34.9h-18.79c-.09-.64-.26-1.26-.5-1.83l13.3-8.17.08,3.6,6.28-8.68c1.25,2.14,3.56,3.58,6.22,3.58,3.98,0,7.2-3.22,7.2-7.2s-3.22-7.2-7.2-7.2-7.2,3.22-7.2,7.2c0,1.31.36,2.54.97,3.6l-10.57,1.8,3.12,1.63-13.24,8.12c-1.32-1.62-3.33-2.66-5.59-2.66-3.98,0-7.2,3.22-7.2,7.2s3.22,7.2,7.2,7.2c2.25,0,4.26-1.04,5.59-2.66l13.24,8.12-3.12,1.63,10.33,1.66c-.46.95-.73,2.01-.73,3.14,0,3.98,3.22,7.2,7.2,7.2s7.2-3.22,7.2-7.2-3.22-7.2-7.2-7.2c-2.77,0-5.17,1.57-6.38,3.86l-6.12-8.36-.08,3.6-13.3-8.17c.25-.57.41-1.19.5-1.83h18.79l-1.81,3.1,10-4.1-10-4.1,1.81,3.1Z" fill="currentColor"/></svg><div class="t">Event Mesh</div></div><div class="s">move</div></div>
       </div>
     </div>
   </section>
@@ -241,9 +263,9 @@
     <div class="funnel-wrap">
       <div class="funnel-labels">
         <div class="fl-spacer"></div>
-        <div class="fbracket fb-mesh" style="--rows:1"><span class="lbl">Event Mesh</span></div>
-        <div class="fbracket fb-cont" style="--rows:2"><span class="lbl">Continuum</span></div>
-        <div class="fbracket fb-sam" style="--rows:2"><span class="lbl">Agent Mesh</span></div>
+        <div class="fbracket fb-mesh" style="--rows:1"><svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><circle cx="53.49" cy="35.9" r="7.2" fill="currentColor"/><path d="m38.1,34.9h-18.79c-.09-.64-.26-1.26-.5-1.83l13.3-8.17.08,3.6,6.28-8.68c1.25,2.14,3.56,3.58,6.22,3.58,3.98,0,7.2-3.22,7.2-7.2s-3.22-7.2-7.2-7.2-7.2,3.22-7.2,7.2c0,1.31.36,2.54.97,3.6l-10.57,1.8,3.12,1.63-13.24,8.12c-1.32-1.62-3.33-2.66-5.59-2.66-3.98,0-7.2,3.22-7.2,7.2s3.22,7.2,7.2,7.2c2.25,0,4.26-1.04,5.59-2.66l13.24,8.12-3.12,1.63,10.33,1.66c-.46.95-.73,2.01-.73,3.14,0,3.98,3.22,7.2,7.2,7.2s7.2-3.22,7.2-7.2-3.22-7.2-7.2-7.2c-2.77,0-5.17,1.57-6.38,3.86l-6.12-8.36-.08,3.6-13.3-8.17c.25-.57.41-1.19.5-1.83h18.79l-1.81,3.1,10-4.1-10-4.1,1.81,3.1Z" fill="currentColor"/></svg><span class="lbl">Event Mesh</span></div>
+        <div class="fbracket fb-cont" style="--rows:2"><svg class="ico" viewBox="-46 -46 92 92" xmlns="http://www.w3.org/2000/svg"><circle cx="0" cy="0" r="18" fill="none" stroke="currentColor" stroke-width="3.5"/><circle cx="0" cy="0" r="30" fill="none" stroke="currentColor" stroke-width="2.8" opacity="0.6"/><circle cx="0" cy="0" r="42" fill="none" stroke="currentColor" stroke-width="2.2" opacity="0.32"/><circle cx="0" cy="0" r="7" fill="currentColor"/></svg><span class="lbl">Continuum</span></div>
+        <div class="fbracket fb-sam" style="--rows:2"><svg class="ico" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M9 5V2.6C9 2.26863 9.26863 2 9.6 2H9.9C10.2314 2 10.5 2.26863 10.5 2.6V5H13V3.6C13 3.26863 13.2686 3 13.6 3H13.9C14.2314 3 14.5 3.26863 14.5 3.6V5L18.4 5C18.7314 5 19 5.26863 19 5.6V9H21.4C21.7314 9 22 9.26863 22 9.6V9.9C22 10.2314 21.7314 10.5 21.4 10.5H19V13H20.4C20.7314 13 21 13.2686 21 13.6V13.9C21 14.2314 20.7314 14.5 20.4 14.5H19V18.4C19 18.7314 18.7314 19 18.4 19H15V20.5H16.9C17.2314 20.5 17.5 20.7686 17.5 21.1V21.4C17.5 21.7314 17.2314 22 16.9 22H14.1C13.7686 22 13.5 21.7314 13.5 21.4V19H11.5V21.4C11.5 21.7314 11.2314 22 10.9 22H10.6C10.2686 22 10 21.7314 10 21.4V19H5.6C5.26863 19 5 18.7314 5 18.4V15.5H3.6C3.26863 15.5 3 15.2314 3 14.9V14.6C3 14.2686 3.26863 14 3.6 14H5L5 11.5H2.6C2.26863 11.5 2 11.2314 2 10.9V10.6C2 10.2686 2.26863 10 2.6 10H5V5.6C5 5.26863 5.26863 5 5.6 5H9ZM11.7453 9.3908C11.6845 9.55503 11.555 9.68451 11.3908 9.74529L9.52069 10.4373C8.99832 10.6306 8.99832 11.3694 9.52069 11.5627L11.3908 12.2547C11.555 12.3155 11.6845 12.445 11.7453 12.6092L12.4373 14.4793C12.6306 15.0017 13.3694 15.0017 13.5627 14.4793L14.2547 12.6092C14.3155 12.445 14.445 12.3155 14.6092 12.2547L16.4793 11.5627C17.0017 11.3694 17.0017 10.6306 16.4793 10.4373L14.6092 9.74529C14.445 9.68451 14.3155 9.55503 14.2547 9.3908L13.5627 7.5207C13.3694 6.99833 12.6306 6.99833 12.4373 7.5207L11.7453 9.3908ZM7.93099 14.2855C8.09522 14.2247 8.2247 14.0952 8.28547 13.931L8.43729 13.5207C8.63059 12.9983 9.36942 12.9983 9.56271 13.5207L9.71453 13.931C9.7753 14.0952 9.90479 14.2247 10.069 14.2855L10.4793 14.4373C11.0017 14.6306 11.0017 15.3694 10.4793 15.5627L10.069 15.7145C9.90479 15.7753 9.7753 15.9048 9.71453 16.069L9.56271 16.4793C9.36942 17.0017 8.63059 17.0017 8.43729 16.4793L8.28547 16.069C8.2247 15.9048 8.09522 15.7753 7.93099 15.7145L7.52071 15.5627C6.99833 15.3694 6.99833 14.6306 7.52071 14.4373L7.93099 14.2855Z" fill="currentColor"/></svg><span class="lbl">Agent Mesh</span></div>
       </div>
       <div class="funnel">
         <div class="fstep s0">The real-time firehose</div>
@@ -262,14 +284,14 @@
     <h2 class="headline">A Proven Foundation, <span style="color:var(--green)">Extended</span></h2>
     <div class="em">
       <div class="em-ends">
-        <span class="em-end">Apps</span>
-        <span class="em-end">Microservices</span>
-        <span class="em-end">Databases</span>
-        <span class="em-end">Mainframe</span>
-        <span class="em-end">SaaS</span>
-        <span class="em-end">Cloud</span>
-        <span class="em-end">Edge &amp; IoT</span>
-        <span class="em-end">Partners</span>
+        <span class="em-end"><svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><path d="m60.92,14.77H11.08c-.99,0-1.76.66-1.76,1.32v39.82c0,.77.77,1.32,1.76,1.32h49.83c.99,0,1.76-.66,1.76-1.32V16.2c0-.77-.77-1.43-1.76-1.43Zm-35.86,1.69c.87,0,1.57.7,1.57,1.57s-.7,1.57-1.57,1.57-1.57-.7-1.57-1.57.7-1.57,1.57-1.57Zm-5.8,0c.87,0,1.57.7,1.57,1.57s-.7,1.57-1.57,1.57-1.57-.7-1.57-1.57.7-1.57,1.57-1.57Zm-5.45,0c.87,0,1.57.7,1.57,1.57s-.7,1.57-1.57,1.57-1.57-.7-1.57-1.57.7-1.57,1.57-1.57Zm47.67,39.34H10.65V21.7h50.82v34.1Z" fill="currentColor" stroke-width="0"/></svg>Apps</span>
+        <span class="em-end"><svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><path d="m63.11,38.59s-.1-.02-.15-.04l-7.6-4.73v-8.21c0-.25-.13-.47-.35-.59-.08-.04-.17-.05-.25-.06l-7.16-4.46v-6.84c0-.25-.13-.47-.35-.59-.05-.03-.1-.02-.15-.04l-11.48-7.14c-.22-.13-.5-.13-.72,0l-11.48,7.14s-.1.01-.15.04c-.22.12-.35.34-.35.59v6.84l-7.16,4.46c-.09,0-.17.02-.25.06-.22.12-.35.34-.35.59v8.42l-7.26,4.52s-.1.01-.15.04c-.22.12-.35.34-.35.59v11.66c0,.23.12.45.31.57l11.66,7.37s.01,0,.02,0c0,0,0,.01.01.01.1.06.21.08.33.08s.22-.03.33-.08c0,0,0-.01.01-.01,0,0,.02,0,.02,0l8.11-5.13,6.69,4.23s.01,0,.02,0c0,0,0,.01.01.01.1.06.21.08.33.08s.22-.03.33-.08c0,0,0-.01.01-.01,0,0,.02,0,.02,0l6.86-4.34,8.28,5.23s.01,0,.02,0c0,0,0,.01.01.01.1.06.21.08.33.08s.22-.03.33-.08c0,0,0-.01.01-.01,0,0,.02,0,.02,0l11.66-7.37c.2-.12.31-.34.31-.57v-11.66c0-.25-.13-.47-.35-.59Zm-1,11.88l-10.31,6.52v-10.06l3.56-2.25,2.06-1.3,4.69-2.92v10.01Zm-26.17,5.62v-17.82l9.41-5.95,8.66-5.39v6.05l-2.52-1.57c-.22-.13-.5-.13-.71,0l-11.48,7.14s-.1.01-.15.04c-.22.12-.35.34-.35.59v11.66c0,.23.12.45.31.57l2.11,1.34-5.28,3.34Zm-15.52.9v-10.06l5.61-3.55,4.69-2.92v10.01l-2.51,1.59-.63.4-.63.4-6.53,4.13Zm-11.01-17.77l5.77-3.59.68-.42.68-.42,3.22-2.01,10.34,6.43.04.02-4.91,3.06-5.46,3.4-3.22-2.01-.68-.42-.68-.42-.89-.55-4.91-3.06.04-.02Zm7.79-13.54l5.74-3.57v3.23c0,.23.12.45.31.57l11.66,7.37s.01,0,.02,0c0,0,0,.01.01.01.1.06.21.08.33.08s.22-.03.33-.08c0,0,0-.01.01-.01,0,0,.02,0,.02,0l11.66-7.37c.2-.12.31-.34.31-.57v-3.23l5.74,3.57.07.04-8.79,5.47-9.35,5.82-9.35-5.82-8.79-5.47.07-.04Zm7.73-11.96l10.34-6.43,10.34,6.43.04.03-4.47,2.78-.51.32-.13.08-.64.4-4.63,2.88-4.63-2.88-.64-.4-.13-.08-.51-.32-4.47-2.78.04-.03Zm21.32,5.96v5.29l-10.31,6.52v-10.06l5.24-3.31.31-.19.33-.21.64-.4,3.79-2.36v4.72Zm-21.96,0v-4.72l3.79,2.36.64.4.33.21.31.19,5.24,3.31v10.06l-10.31-6.52v-5.29Zm-5.21,28.2v9.11l-10.31-6.52v-10.01l4.69,2.92,1.72,1.08.68.43,3.22,2.04v.95Zm12.69,3.54c.2-.12.31-.34.31-.57v-11.66c0-.25-.13-.47-.35-.59-.05-.03-.1-.02-.15-.04l-11.48-7.14c-.22-.13-.5-.13-.71,0l-2.87,1.78v-6.26l8.66,5.39,9.41,5.95v17.82l-5.11-3.23,2.29-1.45Zm29.74-12.17l-4.91,3.06-1.23.77-.67.42-.68.42-2.88,1.79-5.46-3.4-4.91-3.06.04-.02,10.34-6.43,2.88,1.79.68.42.67.42,6.11,3.8.04.02Zm-19.02,12.71l-2.34-1.48v-10.01l4.69,2.92,5.6,3.54h.01v10.07l-6.7-4.24-.63-.4-.63-.4Z" fill="currentColor" stroke-width="0"/></svg>Microservices</span>
+        <span class="em-end"><svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><path d="m36.46,21.68c13.04,0,20.25-2.43,20.25-4.12s-7.21-4.12-20.25-4.12-20.26,2.43-20.26,4.12,7.21,4.12,20.26,4.12Z" fill="currentColor" stroke-width="0"/><path d="m56.63,43.7v-9.16c-4.84,2.03-13.66,2.77-20.67,2.77-8.39,0-15.82-1.03-20.67-2.84v9.11c2.02,1.34,9.01,3.27,20.67,3.27h0c11.9,0,19.5-1.98,20.66-3.15Z" fill="currentColor" stroke-width="0"/><path d="m56.63,47.33c-4.83,2.03-13.65,2.77-20.67,2.77-8.39,0-15.82-1.03-20.67-2.84v6.61h0l.2.44c.91,2.04,7.72,4.11,20.87,4.11,12.2,0,18.83-1.76,20.28-3.55h-.01v-7.54Z" fill="currentColor" stroke-width="0"/><path d="m56.63,21.89c-4.07,2.01-12.98,2.93-20.67,2.93-8.81,0-16.52-1.15-20.67-3.03v9.01c2.02,1.34,9.01,3.27,20.67,3.27s19.51-1.98,20.67-3.15v-9.03Z" fill="currentColor" stroke-width="0"/></svg>Databases</span>
+        <span class="em-end"><svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><path d="m22.62,56.18c0,.4-.3.8-.8.8-.4,0-.8-.3-.8-.8,0-.4.3-.8.8-.8.4.1.8.4.8.8" fill="currentColor" stroke-width="0"/><path d="m28.62,56.18c0,.4-.3.8-.8.8-.4,0-.8-.3-.8-.8,0-.4.3-.8.8-.8.5.1.8.4.8.8" fill="currentColor" stroke-width="0"/><path d="m55.32,52.38H18.82c-.4,0-.8.3-.8.8v6.1c0,.2.1.4.2.5s.3.2.5.2h36.5c.2,0,.4-.1.5-.2.1-.1.2-.3.2-.5v-6.1c0-.2-.1-.4-.2-.5,0-.2-.2-.3-.4-.3h0Zm-33.5,6.1c-.6,0-1.2-.2-1.6-.7-.4-.4-.7-1-.7-1.6s.2-1.2.7-1.6c.4-.4,1-.7,1.6-.7s1.2.2,1.6.7c.4.4.7,1,.7,1.6s-.2,1.2-.7,1.6c-.4.5-1,.7-1.6.7Zm6.1,0c-.6,0-1.2-.2-1.6-.7-.4-.4-.7-1-.7-1.6s.2-1.2.7-1.6c.4-.4,1-.7,1.6-.7s1.2.2,1.6.7c.4.4.7,1,.7,1.6s-.2,1.2-.7,1.6c-.4.5-1,.7-1.6.7Zm25.1-1.5h-7.6c-.4,0-.8-.3-.8-.8,0-.4.3-.8.8-.8h7.6c.4,0,.8.3.8.8s-.4.8-.8.8h0Z" fill="currentColor" stroke-width="0"/><path d="m21.02,61.38c0,.2.1.4.2.5s.3.2.5.2h30.4c.2,0,.4-.1.5-.2s.2-.3.2-.5v-.8H20.82l.2.8Z" fill="currentColor" stroke-width="0"/><path d="m22.62,45.78c0,.4-.3.8-.8.8-.4,0-.8-.3-.8-.8s.3-.8.8-.8c.4,0,.8.3.8.8" fill="currentColor" stroke-width="0"/><path d="m55.32,41.98H18.82c-.4,0-.8.3-.8.8v6.1h0c0,.2.1.4.2.5s.3.2.5.2h36.5c.2,0,.4-.1.5-.2s.2-.3.2-.5v-6.1c0-.2-.1-.4-.2-.5-.1-.1-.2-.3-.4-.3h0Zm-33.5,6c-.6,0-1.2-.2-1.6-.7-.4-.4-.7-1-.7-1.6s.2-1.2.7-1.6c.4-.4,1-.7,1.6-.7s1.2.2,1.6.7c.4.4.7,1,.7,1.6s-.2,1.2-.7,1.6c-.4.5-1,.7-1.6.7Zm6.1,0c-.6,0-1.2-.2-1.6-.7-.4-.4-.7-1-.7-1.6s.2-1.2.7-1.6c.4-.4,1-.7,1.6-.7s1.2.2,1.6.7c.4.4.7,1,.7,1.6s-.2,1.2-.7,1.6c-.4.5-1,.7-1.6.7Zm25.1-1.5h-7.6c-.4,0-.8-.3-.8-.8s.3-.8.8-.8h7.6c.4,0,.8.3.8.8s-.4.8-.8.8Z" fill="currentColor" stroke-width="0"/><path d="m21.02,50.08h32v1.5H21.02v-1.5Z" fill="currentColor" stroke-width="0"/><path d="m28.62,45.78c0,.4-.3.8-.8.8-.4,0-.8-.3-.8-.8s.3-.8.8-.8.8.3.8.8" fill="currentColor" stroke-width="0"/><path d="m22.62,35.68c0,.4-.3.8-.8.8-.4,0-.8-.3-.8-.8,0-.4.3-.8.8-.8.4,0,.8.3.8.8" fill="currentColor" stroke-width="0"/><path d="m55.32,31.88H18.82c-.4,0-.8.3-.8.8v6.1h0c0,.2.1.4.2.5s.3.2.5.2h36.5c.2,0,.4-.1.5-.2s.2-.3.2-.5v-6.1c0-.2-.1-.4-.2-.5-.1-.1-.2-.3-.4-.3h0Zm-33.5,6c-.6,0-1.2-.2-1.6-.7-.4-.4-.7-1-.7-1.6s.2-1.2.7-1.6c.4-.4,1-.7,1.6-.7s1.2.2,1.6.7c.4.4.7,1,.7,1.6s-.2,1.2-.7,1.6c-.4.5-1,.7-1.6.7Zm6.1,0c-.6,0-1.2-.2-1.6-.7-.4-.4-.7-1-.7-1.6s.2-1.2.7-1.6c.4-.4,1-.7,1.6-.7s1.2.2,1.6.7c.4.4.7,1,.7,1.6s-.2,1.2-.7,1.6c-.4.5-1,.7-1.6.7Zm25.1-1.5h-7.6c-.4,0-.8-.3-.8-.8s.3-.8.8-.8h7.6c.4,0,.8.3.8.8s-.4.8-.8.8Z" fill="currentColor" stroke-width="0"/><path d="m21.02,39.98h32v1.5H21.02v-1.5Z" fill="currentColor" stroke-width="0"/><path d="m28.62,35.68c0,.4-.3.8-.8.8-.4,0-.8-.3-.8-.8,0-.4.3-.8.8-.8.5,0,.8.3.8.8" fill="currentColor" stroke-width="0"/><path d="m22.62,25.58c0,.4-.3.8-.8.8-.4,0-.8-.3-.8-.8,0-.4.3-.8.8-.8.4,0,.8.3.8.8" fill="currentColor" stroke-width="0"/><path d="m28.62,25.58c0,.4-.3.8-.8.8-.4,0-.8-.3-.8-.8,0-.4.3-.8.8-.8s.8.3.8.8" fill="currentColor" stroke-width="0"/><path d="m55.32,21.78H18.82c-.4,0-.8.3-.8.8v6.1c0,.2.1.4.2.5s.3.2.5.2h36.5c.2,0,.4-.1.5-.2s.2-.3.2-.5v-6.1c0-.2-.1-.4-.2-.5,0-.3-.2-.3-.4-.3h0Zm-33.5,6c-.6,0-1.2-.2-1.6-.7-.4-.4-.7-1-.7-1.6s.2-1.2.7-1.6c.4-.4,1-.7,1.6-.7s1.2.2,1.6.7c.4.4.7,1,.7,1.6s-.2,1.2-.7,1.6c-.4.5-1,.7-1.6.7Zm6.1,0c-.6,0-1.2-.2-1.6-.7-.4-.4-.7-1-.7-1.6s.2-1.2.7-1.6c.4-.4,1-.7,1.6-.7s1.2.2,1.6.7c.4.4.7,1,.7,1.6s-.2,1.2-.7,1.6c-.4.5-1,.7-1.6.7Zm25.1-1.5h-7.6c-.4,0-.8-.3-.8-.8,0-.4.3-.8.8-.8h7.6c.4,0,.8.3.8.8s-.4.8-.8.8h0Z" fill="currentColor" stroke-width="0"/><path d="m21.02,30.68c0,.2.1.4.2.5s.3.2.5.2h30.4c.2,0,.4-.1.5-.2s.2-.3.2-.5v-.8H20.82l.2.8Z" fill="currentColor" stroke-width="0"/><path d="m22.62,15.08c0,.4-.3.8-.8.8-.4,0-.8-.3-.8-.8s.3-.8.8-.8c.4,0,.8.4.8.8" fill="currentColor" stroke-width="0"/><path d="m55.32,11.28H18.82c-.4,0-.8.3-.8.8v6.1h0c0,.2.1.4.2.5s.3.2.5.2h36.5c.2,0,.4-.1.5-.2s.2-.3.2-.5v-6.1c0-.2-.1-.4-.2-.5,0-.2-.2-.3-.4-.3h0Zm-33.5,6.1c-.6,0-1.2-.2-1.6-.7-.4-.4-.7-1-.7-1.6s.2-1.2.7-1.6c.4-.4,1-.7,1.6-.7s1.2.2,1.6.7c.4.4.7,1,.7,1.6s-.2,1.2-.7,1.6c-.4.4-1,.7-1.6.7Zm6.1,0c-.6,0-1.2-.2-1.6-.7-.4-.4-.7-1-.7-1.6s.2-1.2.7-1.6c.4-.4,1-.7,1.6-.7s1.2.2,1.6.7c.4.4.7,1,.7,1.6s-.2,1.2-.7,1.6c-.4.4-1,.7-1.6.7Zm25.1-1.6h-7.6c-.4,0-.8-.3-.8-.8s.3-.8.8-.8h7.6c.4,0,.8.3.8.8s-.4.8-.8.8Z" fill="currentColor" stroke-width="0"/><path d="m21.02,19.38h32v1.5H21.02v-1.5Z" fill="currentColor" stroke-width="0"/><path d="m28.62,15.08c0,.4-.3.8-.8.8-.4,0-.8-.3-.8-.8s.3-.8.8-.8.8.4.8.8" fill="currentColor" stroke-width="0"/></svg>Mainframe</span>
+        <span class="em-end"><svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><path d="m60.92,14.77H11.08c-.99,0-1.76.66-1.76,1.32v39.82c0,.77.77,1.32,1.76,1.32h49.83c.99,0,1.76-.66,1.76-1.32V16.2c0-.77-.77-1.43-1.76-1.43Zm-35.86,1.69c.87,0,1.57.7,1.57,1.57s-.7,1.57-1.57,1.57-1.57-.7-1.57-1.57.7-1.57,1.57-1.57Zm-5.8,0c.87,0,1.57.7,1.57,1.57s-.7,1.57-1.57,1.57-1.57-.7-1.57-1.57.7-1.57,1.57-1.57Zm-5.45,0c.87,0,1.57.7,1.57,1.57s-.7,1.57-1.57,1.57-1.57-.7-1.57-1.57.7-1.57,1.57-1.57Zm47.67,39.34H10.65V21.7h50.82v34.1Z" fill="currentColor" stroke-width="0"/><path d="m50.38,36.11v-1.81c0-5.04-4.18-8.84-9.22-8.84-3.9,0-7.32,2.19-8.55,5.7-1.23-.95-2.66-1.43-4.37-1.43-3.99,0-7.32,3.33-7.51,7.32-2.19.95-3.8,3.04-3.8,5.61,0,3.52,2.57,6.37,6.08,6.37h25.18c3.52,0,6.37-2.85,6.37-6.37,0-2.85-1.52-5.8-4.18-6.56Z" fill="currentColor" stroke-width="0"/></svg>SaaS</span>
+        <span class="em-end"><svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><path d="m56.02,34.44v-2.47c0-6.89-5.72-12.09-12.61-12.09-5.33,0-10.01,2.99-11.7,7.8-1.69-1.3-3.64-1.95-5.98-1.95-5.46,0-10.01,4.55-10.27,10.01-2.99,1.3-5.2,4.16-5.2,7.67,0,4.81,3.51,8.71,8.32,8.71h34.45c4.81,0,8.71-3.9,8.71-8.71,0-3.9-2.08-7.93-5.72-8.97Z" fill="currentColor" stroke-width="0"/></svg>Cloud</span>
+        <span class="em-end"><svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><path d="m38.05,21.08c-.35.4-.71.6-1.14.8l2.27,8.1h-6.67l2.27-8.1h0c-.43-.2-.78-.4-1.14-.8l-10.22,36.6c-.07.2-.07.5,0,.7s.21.4.35.5.35.1.5,0,.28-.3.35-.5l.85-2.9h20.87l.85,2.9c.07.3.35.6.57.6.07,0,.14,0,.21-.1.14-.1.28-.3.35-.5s.07-.5,0-.7l-10.29-36.6Zm5.54,24.6h-3.19l-3.41-3.1,3.41-3.1h1.49l1.7,6.2Zm-5.54-6.1l-2.27,2-2.27-2h4.54Zm-3.34-1.8l1.14-1.7,1.14,1.7h-2.27Zm3.34,7.9h-4.47l2.2-2,2.27,2Zm.71,1.8l-2.98,2.1-2.98-2.1h5.96Zm.92-15.8l1.7,6.1h-2.77l-1.92-3.1,1.92-3.1,1.06.1Zm-2.77,0l-1.14,1.8-1.14-1.8h2.27Zm-4.9,0h1.06l1.92,3.1-1.92,3.1h-2.77l1.7-6.2Zm-2.2,7.9h1.49l3.41,3.1-3.41,3.1h-3.19l1.7-6.2Zm-3.9,14l1.7-6.1h2.48l4.33,3.1-4.33,3.1-4.19-.1Zm6.96,0l2.98-2.1,2.98,2.1h-5.96Zm8.73,0l-4.33-3.1,4.33-3.1h2.48l1.7,6.1-4.19.1Z" fill="currentColor" stroke-width="0"/><path d="m39.34,16.78c0,1.9-1.6,3.5-3.5,3.5s-3.5-1.6-3.5-3.5,1.6-3.5,3.5-3.5,3.5,1.6,3.5,3.5" fill="currentColor" stroke-width="0"/><path d="m29.34,13.48c-.4-.3-.9-.2-1.2.2-.7.9-1.1,2-1.1,3.2,0,1.1.4,2.2,1.1,3.2.2.2.4.3.7.3.2,0,.4-.1.5-.2.4-.3.5-.8.2-1.2-.5-.6-.7-1.3-.7-2.1s.2-1.5.7-2.1c.1-.2.2-.4.2-.6-.1-.4-.2-.6-.4-.7h0Z" fill="currentColor" stroke-width="0"/><path d="m25.44,10.98c-1.3,1.7-1.9,3.7-1.9,5.8s.7,4.1,1.9,5.8c.2.2.4.3.7.3.2,0,.4-.1.5-.2.4-.3.5-.8.2-1.2-1-1.4-1.6-3-1.6-4.7s.6-3.4,1.6-4.7c.3-.4.2-.9-.2-1.2-.3-.3-.9-.3-1.2.1h0Z" fill="currentColor" stroke-width="0"/><path d="m22.84,8.38c-1.8,2.4-2.8,5.4-2.8,8.4s1,6,2.8,8.4c.2.2.4.3.7.3.2,0,.4-.1.5-.2.4-.3.5-.8.2-1.2-1.6-2.1-2.4-4.7-2.4-7.4s.9-5.2,2.4-7.4c.3-.4.2-.9-.2-1.2-.4-.1-.9-.1-1.2.3h0Z" fill="currentColor" stroke-width="0"/><path d="m42.24,20.08c.2.1.3.2.5.2.3,0,.5-.1.7-.3.7-.9,1.1-2,1.1-3.2s-.4-2.2-1.1-3.2c-.1-.2-.3-.3-.6-.4-.2,0-.5,0-.7.2-.2.1-.3.4-.3.6s0,.5.2.7c.5.6.7,1.3.7,2.1s-.2,1.5-.7,2.1c-.1.2-.2.4-.2.6.1.3.3.5.4.6h0Z" fill="currentColor" stroke-width="0"/><path d="m44.94,10.88c-.4.3-.5.8-.2,1.2,1,1.4,1.6,3,1.6,4.7s-.6,3.4-1.6,4.7c-.3.4-.2.9.2,1.2.2.1.3.2.5.2.3,0,.5-.1.7-.3,1.3-1.7,1.9-3.7,1.9-5.8s-.7-4.1-1.9-5.8c-.1-.2-.4-.3-.6-.3-.2,0-.4,0-.6.2h0Z" fill="currentColor" stroke-width="0"/><path d="m47.34,24.18c-.3.4-.2.9.2,1.2.2.1.3.2.5.2.3,0,.5-.1.7-.3,1.8-2.4,2.8-5.4,2.8-8.4s-1-6-2.8-8.4c-.3-.4-.8-.4-1.2-.1s-.5.8-.2,1.2c1.6,2.1,2.4,4.7,2.4,7.4.1,2.5-.8,5-2.4,7.2h0Z" fill="currentColor" stroke-width="0"/></svg>Edge &amp; IoT</span>
+        <span class="em-end"><svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><path d="m57.11,55.7h-2.83c.05-.11.09-.24.09-.37V21.37c0-.47-.38-.85-.85-.85h-8.43v-6.2c0-.47-.38-.85-.85-.85h-25.75c-.47,0-.85.38-.85.85v41.38h-2.75c-.47,0-.85.38-.85.85s.38.85.85.85h42.23c.47,0,.85-.38.85-.85s-.38-.85-.85-.85Zm-4.44-33.48v33.11c0,.13.03.26.09.37h-7.67V22.22h7.58Zm-33.34-7.05h24.06v40.53h-8.81v-3.52c0-.47-.38-.85-.85-.85h-4.75c-.47,0-.85.38-.85.85v3.52h-8.81V15.18Zm13.55,40.53h-3.05v-2.67h3.05v2.67Z" fill="currentColor" stroke-width="0"/><path d="m22.34,19.7h18.05c.47,0,.85-.38.85-.85s-.38-.85-.85-.85h-18.05c-.47,0-.85.38-.85.85s.38.85.85.85Z" fill="currentColor" stroke-width="0"/><path d="m22.34,23.97h18.05c.47,0,.85-.38.85-.85s-.38-.85-.85-.85h-18.05c-.47,0-.85.38-.85.85s.38.85.85.85Z" fill="currentColor" stroke-width="0"/><path d="m22.34,28.25h18.05c.47,0,.85-.38.85-.85s-.38-.85-.85-.85h-18.05c-.47,0-.85.38-.85.85s.38.85.85.85Z" fill="currentColor" stroke-width="0"/><path d="m22.34,32.52h18.05c.47,0,.85-.38.85-.85s-.38-.85-.85-.85h-18.05c-.47,0-.85.38-.85.85s.38.85.85.85Z" fill="currentColor" stroke-width="0"/><path d="m22.34,36.79h18.05c.47,0,.85-.38.85-.85s-.38-.85-.85-.85h-18.05c-.47,0-.85.38-.85.85s.38.85.85.85Z" fill="currentColor" stroke-width="0"/><path d="m22.34,41.06h18.05c.47,0,.85-.38.85-.85s-.38-.85-.85-.85h-18.05c-.47,0-.85.38-.85.85s.38.85.85.85Z" fill="currentColor" stroke-width="0"/><path d="m25.56,52.24h-3.33c-.47,0-.85.38-.85.85s.38.85.85.85h3.33c.47,0,.85-.38.85-.85s-.38-.85-.85-.85Z" fill="currentColor" stroke-width="0"/></svg>Partners</span>
       </div>
       <div class="em-core">Event Mesh<span class="s">proven in production, enterprise-wide</span></div>
       <div class="em-topic">
@@ -285,11 +307,11 @@
     <h2 class="headline">Build It Once, Feed Everything</h2>
     <div class="flow">
       <div class="col srcs">
-        <div class="box"><div class="t">Flights</div></div>
-        <div class="box"><div class="t">Weather</div></div>
-        <div class="box"><div class="t">Rates</div></div>
-        <div class="box"><div class="t">ETAs</div></div>
-        <div class="box"><div class="t">Restrictions</div></div>
+        <div class="box"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg><div class="t">Flights</div></div>
+        <div class="box"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="M20 12h2"/><path d="m19.07 4.93-1.41 1.41"/><path d="M15.947 12.65a4 4 0 0 0-5.925-4.128"/><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/></svg><div class="t">Weather</div></div>
+        <div class="box"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg><div class="t">Rates</div></div>
+        <div class="box"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><div class="t">ETAs</div></div>
+        <div class="box"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M4.929 4.929 19.07 19.071"/></svg><div class="t">Restrictions</div></div>
       </div>
       <div class="fan dim">
         <span class="fan-cap">Event Mesh</span>
@@ -298,16 +320,16 @@
       </div>
       <div class="hub"><div class="t">Continuum</div><div class="s">value-added<br>data products</div></div>
       <div class="access">
-        <div class="arow out"><span class="ar">▸</span><span class="lbl">Events</span></div>
-        <div class="arow in"><span class="ar">◂</span><span class="lbl">MCP</span></div>
-        <div class="arow in"><span class="ar">◂</span><span class="lbl">SQL</span></div>
+        <div class="arow out"><span class="ar">▸</span><span class="lbl">Events</span><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.247 7.761a6 6 0 0 1 0 8.478"/><path d="M19.075 4.933a10 10 0 0 1 0 14.134"/><path d="M4.925 19.067a10 10 0 0 1 0-14.134"/><path d="M7.753 16.239a6 6 0 0 1 0-8.478"/><circle cx="12" cy="12" r="2"/></svg></div>
+        <div class="arow in"><span class="ar">◂</span><span class="lbl">MCP</span><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M15 8V2"/><path d="M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z"/><path d="M9 8V2"/></svg></div>
+        <div class="arow in"><span class="ar">◂</span><span class="lbl">SQL</span><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg></div>
       </div>
       <div class="col cons">
-        <div class="box"><div class="t">Agent Mesh</div></div>
-        <div class="box"><div class="t">Vendor AI</div></div>
-        <div class="box"><div class="t">Program tools</div></div>
-        <div class="box"><div class="t">Dashboards</div></div>
-        <div class="box"><div class="t">External consumers</div></div>
+        <div class="box"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg><div class="t">Agent Mesh</div></div>
+        <div class="box"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></svg><div class="t">Vendor AI</div></div>
+        <div class="box"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg><div class="t">Program tools</div></div>
+        <div class="box"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg><div class="t">Dashboards</div></div>
+        <div class="box"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg><div class="t">External consumers</div></div>
       </div>
     </div>
   </section>
@@ -387,6 +409,7 @@
         <div class="am-label">Solace Agent Mesh</div>
         <div class="fs-pair">
           <div class="fs-card fast">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.914 4a1.5 1.5 0 0 0-2.474-1.561l-9 9A1.5 1.5 0 0 0 5.5 14h4.002a.5.5 0 0 1 .471.666L8.086 20a1.5 1.5 0 0 0 2.475 1.56l9-9A1.5 1.5 0 0 0 18.5 10h-3.997a.5.5 0 0 1-.472-.667z"/></svg>
             <div class="k">Fast</div>
             <div class="h">Decision model</div>
             <div class="d">Sub-second triage on every event.</div>
@@ -395,6 +418,7 @@
             <span class="y">▸ ESCALATE</span>
           </div>
           <div class="fs-card slow">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18h8"/><path d="M3 22h18"/><path d="M14 22a7 7 0 1 0 0-14h-1"/><path d="M9 14h2"/><path d="M9 12a2 2 0 0 1-2-2V6h6v4a2 2 0 0 1-2 2Z"/><path d="M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3"/></svg>
             <div class="k">Deep</div>
             <div class="h">LLM investigation</div>
             <div class="d">Specialists reason over the live context, then write an advisory brief.</div>
@@ -403,12 +427,14 @@
         <div class="am-props">
           <span class="am-prop">Real-time at scale</span>
           <span class="am-prop">Deploy on your terms</span>
+          <span class="am-prop">Advisory → autonomous</span>
           <span class="am-prop">Triggered by events</span>
         </div>
       </div>
       </div>
       <div class="am-mcp">
         <span class="arr">▸</span>
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M15 8V2"/><path d="M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z"/><path d="M9 8V2"/></svg>
         <span class="node">MCP → Continuum</span>
       </div>
       </div>
@@ -419,6 +445,7 @@
   <section class="slide">
     <div class="topbar">Live Demo</div>
     <div class="bridge">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg>
       <div class="bridge-eyebrow">now, live</div>
       <div class="bridge-title">See It Live</div>
       <div class="bridge-sub">Event Mesh → Continuum → Agent Mesh — end to end.</div>
