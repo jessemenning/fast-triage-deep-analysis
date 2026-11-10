@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+# Created products are runtime state; commit them deliberately if you want them versioned.
+catalog/products/*/
+!catalog/products/.gitkeep

@@ -1,0 +1,10 @@
+-- ---------------------------------------------------------------------------
+-- Source stream: {{ stream.name }} ({{ stream.kind }}) -> queue {{ queue }}
+-- Subscriptions: {{ stream.topic_subscriptions | join(', ') }}
+{% if stream.snapshot %}
+-- Initial state: one-shot snapshot of {{ stream.base_pipeline }}.{{ stream.relation }}, then live changes.
+{% endif %}
+-- ---------------------------------------------------------------------------
+{{ ddl | trim }} WITH ({% if stream.append_only %}'append_only' = 'true', {% endif %}'connectors' = '{{ connectors_json }}');
+
+{{ decode_sql | trim }}

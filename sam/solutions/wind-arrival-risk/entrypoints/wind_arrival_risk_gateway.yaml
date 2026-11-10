@@ -1,0 +1,40 @@
+kind: entrypoint
+name: wind_arrival_risk_gateway
+description: "Event-mesh gateway for wind-arrival-risk: subscribes to the Continuum wind-arrival-risk-breach trigger, runs WindArrivalRiskWorkflow, and publishes the triage decision / brief."
+spec:
+  type: event_mesh
+  deploy: true
+  values:
+    artifact_handling_mode: reference
+    broker_url: tcp://solace:55555
+    broker_vpn: default
+    broker_username: default
+    broker_password: default
+    event_rules:
+      - name: wind_risk_handler
+        # Attribute event-mesh tasks to the default web-UI user so the flow shows
+        # in the Activity tab (the dashboard is user-scoped).
+        defaultUserIdentity: sam_dev_user
+        subscriptions:
+          - topic: fl/cp/wind-arrival-risk/wind-risk/>
+            qos: 0
+        messageFormat: json
+        payloadEncoding: utf-8
+        inputExpression: input.payload:insert
+        forwardContext:
+          airport: input.payload:insert.airport
+        targetWorkflowName: WindArrivalRiskWorkflow
+        acknowledgmentPolicy: { mode: on_receive }
+        successOutput:
+          enabled: true
+          format: json
+          responseType: custom
+          customExpression: "input.payload:data[0]"
+          topicType: dynamic
+          topic: solutions/wind-arrival-risk/decision/{{text://user_data.forward_context:airport}}
+        errorOutput:
+          enabled: true
+          format: json
+          responseType: error
+          topicType: dynamic
+          topic: solutions/wind-arrival-risk/error/{{text://user_data.forward_context:airport}}

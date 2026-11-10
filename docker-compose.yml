@@ -1,0 +1,280 @@
+# FAA Fast/Slow — Arrival Capacity Demand vs Published Rate. One compose for the whole thing.
+#
+#   Event Mesh (broker) → Continuum (Feldera engine + replay/scenario) → Agent Mesh (SAM)
+#   plus the two MCP servers that make SAM the interface.
+#
+# Bring it all up with `make up` (compose up + wait + deploy the premade solution),
+# or `docker compose up -d --build` then `make apply && make apply-reference`.
+#
+# Data plane is fully Solace-native: flights (FDPS), rates (TTP Airport Information),
+# ETAs (TTPFD), METAR and restrictions (TMR) all arrive over Solace — no database, no CDC.
+#
+# Prerequisites that are NOT in this repo (see README):
+#   * the SAM runtime image (private Solace ECR) — `aws ecr get-login-password | docker login …`
+#   * an LLM endpoint + key in .env (LLM_SERVICE_*) — also powers the LiteLLM /v1/decisions node
+# Event Portal registration is optional; set SOLACE_API_TOKEN in .env to enable it.
+
+services:
+
+  # ── Solace event broker: the Event Mesh (data plane) ─────────────────────────
+  solace:
+    image: solace/solace-pubsub-standard:latest
+    shm_size: 1g
+    ulimits:
+      core: { soft: 1, hard: 1 }
+      nofile: { soft: 1048576, hard: 1048576 }
+    environment:
+      - username_admin_globalaccesslevel=admin
+      - username_admin_password=${SOLACE_ADMIN_PASSWORD:-admin}
+      - system_scaling_maxconnectioncount=100
+    ports:
+      - "55555:55555"   # SMF  — Continuum engine + SAM event-mesh gateway
+      - "8089:8080"     # SEMP — Solace Platform Manager (host:8089 avoids api:8080)
+      - "1883:1883"     # MQTT — ops-console.py subscribes here
+      - "8008:8000"     # MQTT over WebSocket
+      - "9000:9000"     # REST messaging — burst.sh publishes here
+    healthcheck:
+      # Gate on the guaranteed-messaging plane being up and ACTIVE, not just the
+      # admin web UI (:8080), which greens well before SMF/spool accepts client
+      # connections — otherwise init/sam/feed/scenario race a not-ready broker.
+      test: ["CMD-SHELL", "curl -sf http://localhost:5550/health-check/guaranteed-active >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  # ── Continuum engine: incremental SQL compute (STOCK upstream Feldera) ───────
+  # Solace I/O is no longer in the engine; the `sidecar` service below bridges
+  # Solace⇄Feldera over the HTTP ingress/egress API, so this runs unmodified.
+  feldera:
+    image: ${FELDERA_IMAGE:-ghcr.io/feldera/pipeline-manager:latest}
+    ports:
+      - "8081:8080"   # REST + Web Console (host:8081 avoids api:8080)
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/healthz >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 15s
+
+  # ── One-shot init: broker queue setup + load/start the base Continuum pipeline ─
+  # Loads stack/config/feldera/faa_program.sql. Enables REST 9000 on the VPN.
+  init:
+    build:
+      context: ./stack/config
+      dockerfile: init.Dockerfile
+    depends_on:
+      solace: { condition: service_healthy }
+      feldera: { condition: service_healthy }
+    environment:
+      - SOLACE_ADMIN_PASSWORD=${SOLACE_ADMIN_PASSWORD:-admin}
+      - FL_HOST=feldera
+      - FL_PORT=8080
+      - FL_WORKERS=${FL_WORKERS:-4}
+      - FL_SOLACE_HOSTNAME=solace
+      - FL_SOLACE_PORT=55555
+      - FL_SOLACE_VPN=${SOLACE_VPN:-default}
+      - FL_SOLACE_USER=${SOLACE_USER:-default}
+      - FL_SOLACE_PASSWORD=${SOLACE_PASSWORD:-default}
+    restart: "no"
+
+  # ── feldera-solace sidecar: bridges Solace ⇄ stock Feldera over HTTP ──────────
+  # Replaces the old in-engine Solace connector. Binds the fl-* queues (created by
+  # init) and the arrival-capacity pipeline (loaded+started by init), so it waits
+  # for init to complete. Built from the sibling repo ../continuum-solace-connector
+  # (OSS, non-FIPS; links the first-party bridge-solace CCSMP wrapper). Config +
+  # queue/topic mapping: stack/sidecar/config.yaml.
+  sidecar:
+    build:
+      context: ${SIDECAR_CONTEXT:-../continuum-solace-connector}
+      dockerfile: docker/Dockerfile
+    image: ${SIDECAR_IMAGE:-continuum-solace-connector:dev}
+    depends_on:
+      solace: { condition: service_healthy }
+      feldera: { condition: service_healthy }
+      init: { condition: service_completed_successfully }
+    environment:
+      - RUST_LOG=${SIDECAR_LOG:-info}
+      - FL_SOLACE_HOSTNAME=solace
+      - FL_SOLACE_PORT=55555
+      - FL_SOLACE_VPN=${SOLACE_VPN:-default}
+      - FL_SOLACE_USER=${SOLACE_USER:-default}
+      - FL_SOLACE_PASSWORD=${SOLACE_PASSWORD:-default}
+    volumes:
+      - ./stack/sidecar/config.yaml:/etc/sidecar/config.yaml:ro
+    ports:
+      - "8079:8079"   # /healthz /readyz /metrics
+    restart: unless-stopped
+
+  # ── Feed: replay captured SWIM data (FDPS + TTP + METAR) on a timeline ────────
+  feed:
+    build:
+      context: ./stack/feed
+    depends_on:
+      init: { condition: service_completed_successfully }
+    environment:
+      - SOLACE_HOST=${SOLACE_HOST:-tcp://solace:55555}
+      - SOLACE_VPN=${SOLACE_VPN:-default}
+      - SOLACE_USER=${SOLACE_USER:-default}
+      - SOLACE_PASSWORD=${SOLACE_PASSWORD:-default}
+      - REPLAY_SPEED=${REPLAY_SPEED:-1.0}
+      - REPLAY_LOOP=${REPLAY_LOOP:-true}
+      - DATA_DIR=/data
+    volumes:
+      # Captured SWIM message corpus (committed samples; refresh with stack/data/capture.py)
+      - ./stack/data:/data:ro
+    restart: unless-stopped
+
+  # ── Scenario driver: the scripted "wind shift degrades capacity" narrative ──
+  scenario:
+    build:
+      context: ./stack/scenario
+    depends_on:
+      init: { condition: service_completed_successfully }
+    environment:
+      - SOLACE_HOST=${SOLACE_HOST:-tcp://solace:55555}
+      - SOLACE_VPN=${SOLACE_VPN:-default}
+      - SOLACE_USER=${SOLACE_USER:-default}
+      - SOLACE_PASSWORD=${SOLACE_PASSWORD:-default}
+      - HERO_AIRPORT=${HERO_AIRPORT:-KEWR}
+      - NORMAL_AAR=${NORMAL_AAR:-44}
+      - DEGRADED_AAR=${DEGRADED_AAR:-26}
+      # Wind shift forces EWR from the 22L|22R flow to single-runway 4R: AAR 44→26.
+      # The busy arrival window varies (and is depressed right after a Reset), so the
+      # AAR drop alone is NOT a reliable SEVERE breach. Size the burst so demand clears
+      # the SEVERE threshold (≥32 vs AAR 26) even on a depressed board, independent of
+      # when the wind shift is clicked — clustered into the near window (see eta_off).
+      - SCENARIO_BURST=${SCENARIO_BURST:-24}
+      - SCENARIO_AUTOSTART=${SCENARIO_AUTOSTART:-false}
+    restart: unless-stopped
+
+  # ── FAA API + demo UI (FastAPI) ───────────────────────────────────────────────
+  api:
+    build:
+      context: ./stack/api
+    depends_on:
+      feldera: { condition: service_healthy }
+    environment:
+      - FELDERA_URL=${FELDERA_URL:-http://feldera:8080}
+      - FELDERA_PIPELINE=${FELDERA_PIPELINE:-arrival-capacity}
+      - SOLACE_HOST=${SOLACE_HOST:-tcp://solace:55555}
+      - SOLACE_VPN=${SOLACE_VPN:-default}
+      - SOLACE_USER=${SOLACE_USER:-default}
+      - SOLACE_PASSWORD=${SOLACE_PASSWORD:-default}
+      - API_PORT=8080
+      - LOG_LEVEL=INFO
+      - CONTINUUM_MCP_URL=${CONTINUUM_MCP_URL:-http://continuum-mcp:8091/mcp}
+      - CONTINUUM_MCP_TOKEN=${CONTINUUM_MCP_TOKEN:-continuum-dev-token-local}
+      - PRODUCTS_DIR=/app/products
+    volumes:
+      - ./stack/api/static:/app/static
+      - ./demo/products:/app/products:ro   # prewarmed data-product specs (prefill the authoring form)
+    ports:
+      - "${API_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # ── Continuum MCP: Continuum as data products & triggers (the new interface) ──
+  continuum-mcp:
+    build:
+      context: ./continuum-mcp
+    depends_on:
+      solace: { condition: service_healthy }
+      feldera: { condition: service_healthy }
+      init: { condition: service_completed_successfully }
+    environment:
+      - FELDERA_URL=http://feldera:8080
+      - FELDERA_INTERNAL_URL=http://feldera:8080
+      - BASE_PIPELINE=${FELDERA_PIPELINE:-arrival-capacity}
+      - SEMP_URL=http://solace:8080
+      - SEMP_USER=${SOLACE_ADMIN_USER:-admin}
+      - SEMP_PASS=${SOLACE_ADMIN_PASSWORD:-admin}
+      - SEMP_VPN=${SOLACE_VPN:-default}
+      - FL_SOLACE_HOSTNAME=solace
+      - FL_SOLACE_PORT=55555
+      - FL_SOLACE_VPN=${SOLACE_VPN:-default}
+      - FL_SOLACE_USER=${SOLACE_USER:-default}
+      - FL_SOLACE_PASSWORD=${SOLACE_PASSWORD:-default}
+      - CONTINUUM_MCP_TOKEN=${CONTINUUM_MCP_TOKEN:-continuum-dev-token-local}
+      - TRIGGER_ENVELOPE=insert
+      - CATALOG_DIR=/app/catalog
+      # Event Portal registration (optional; skipped when the token is empty)
+      - SOLACE_API_TOKEN=${SOLACE_API_TOKEN:-}
+      - CONTINUUM_EP_DOMAIN=${CONTINUUM_EP_DOMAIN:-FAA Arrival Capacity}
+    volumes:
+      - continuum_products:/app/catalog/products
+    ports:
+      - "8091:8091"
+    restart: unless-stopped
+
+  # ── Event Portal MCP: streamable-http wrapper over the EP Designer API ────────
+  # Starts even without SOLACE_API_TOKEN (calls 401 until one is set) so SAM's
+  # connector discovery always succeeds.
+  ep-mcp:
+    build:
+      context: ./ep-mcp-http
+    environment:
+      - SOLACE_API_TOKEN=${SOLACE_API_TOKEN:-}
+      - SOLACE_API_BASE_URL=${SOLACE_API_BASE_URL:-https://api.solace.cloud}
+      - EP_MCP_TOKEN=${EP_MCP_TOKEN:-ep-dev-token-local-0001}
+      - EP_MCP_HOST=0.0.0.0
+      - EP_MCP_PORT=8092
+    ports:
+      - "8092:8092"
+    restart: unless-stopped
+
+  # ── Solace Agent Mesh runtime (Solace-enabled build, from the private ECR) ────
+  # The host `sam` CLI is the client: `make apply` pushes sam/manifests/dev.yaml.
+  sam:
+    image: ${SAM_IMAGE:-solace-agent-mesh:2.409.2}
+    environment:
+      HOME: "/tmp/sam-data"
+      SAM_DATA_DIR: "/tmp/sam-data"
+      PLATFORM_DATABASE_URL: "sqlite:////tmp/sam-data/platform.db"
+      OBJECT_STORAGE_FS_ROOT: "/tmp/sam-data/execution-data"
+      TASK_LOGGING_ENABLED: "true"
+      LLM_SERVICE_ENDPOINT: "${LLM_SERVICE_ENDPOINT}"
+      LLM_SERVICE_API_KEY: "${LLM_SERVICE_API_KEY}"
+      LLM_SERVICE_GENERAL_MODEL_NAME: "${LLM_SERVICE_GENERAL_MODEL_NAME:-gpt-4o}"
+      LLM_SERVICE_PLANNING_MODEL_NAME: "${LLM_SERVICE_PLANNING_MODEL_NAME:-${LLM_SERVICE_GENERAL_MODEL_NAME:-gpt-4o}}"
+      OPENAI_API_KEY: "${LLM_SERVICE_API_KEY}"
+      OPENAI_API_BASE: "${LLM_SERVICE_ENDPOINT}"
+      EVENT_MESH_SOLACE_BROKER_URL: "tcp://solace:55555"
+      EVENT_MESH_SOLACE_BROKER_VPN: "${SOLACE_VPN:-default}"
+      EVENT_MESH_SOLACE_BROKER_USERNAME: "${SOLACE_USER:-default}"
+      EVENT_MESH_SOLACE_BROKER_PASSWORD: "${SOLACE_PASSWORD:-default}"
+      # MCP servers reachable from deployed connectors (continuum-mcp / event-portal-mcp)
+      # over streamable-http. Continuum backs the System-2 specialists; EP is optional.
+      CONTINUUM_MCP_URL: "http://continuum-mcp:8091/mcp"
+      CONTINUUM_MCP_TOKEN: "${CONTINUUM_MCP_TOKEN:-continuum-dev-token-local}"
+      EP_MCP_URL: "http://ep-mcp:8092/mcp"
+      EP_MCP_TOKEN: "${EP_MCP_TOKEN:-ep-dev-token-local-0001}"
+      # Native workflow decision node (#4241, OpenAI Decisions). OFF by default in the
+      # runtime; the ArrivalCapacityWorkflow `type: decision` node will not load or
+      # execute without it. The host CLI needs the same flag to parse/apply the
+      # workflow (set in .env; the Makefile apply targets also export it).
+      SAM_FEATURE_WORKFLOW_DECISION_NODE: "${SAM_FEATURE_WORKFLOW_DECISION_NODE:-true}"
+    command: >
+      run --embedded --system-env --no-onboarding --
+      /etc/sam/configs/gwe/gwe.yaml
+      /etc/sam/configs/gwe/platform.yaml
+      /etc/sam/configs/str/str.yaml
+      /etc/sam/configs/awe/sam.yaml
+    volumes:
+      - sam_data:/tmp/sam-data
+    ports:
+      - "8800:8800"
+    depends_on:
+      solace: { condition: service_healthy }
+      continuum-mcp: { condition: service_started }
+      ep-mcp: { condition: service_started }
+    restart: unless-stopped
+
+volumes:
+  sam_data:
+  continuum_products:

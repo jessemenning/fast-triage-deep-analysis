@@ -1,0 +1,46 @@
+name: active_restrictions
+kind: raw
+description: >-
+  Active traffic-management restrictions (TMR) per airport — ground delay
+  programs, APREQ/call-for-release, ground stops — with the reason and scope.
+  Latest declaration per airport and restriction type wins, kept for 2h. Context
+  for the decision brief and provenance of a capacity breach.
+relation: active_restriction
+base_pipeline: arrival-capacity
+topic_subscriptions:
+  - TTP/restriction/>
+topic_pattern: TTP/restriction/{airport}/{restriction_type}
+include_broker_timestamp: true
+ddl: |
+  CREATE TABLE active_restriction_raw (
+      data             VARCHAR,
+      airport          VARCHAR   DEFAULT CAST(CONNECTOR_METADATA()['airport'] AS VARCHAR),
+      restriction_type VARCHAR   DEFAULT CAST(CONNECTOR_METADATA()['restriction_type'] AS VARCHAR),
+      broker_ts        TIMESTAMP DEFAULT CAST(CONNECTOR_METADATA()['broker_ts'] AS TIMESTAMP)
+  )
+decode_sql: |
+  CREATE MATERIALIZED VIEW active_restriction AS
+  SELECT airport, restriction_type, reason, scope, effective_time
+  FROM (
+      SELECT airport, restriction_type,
+          CAST(PARSE_JSON(data)['reason'] AS VARCHAR)           AS reason,
+          CAST(PARSE_JSON(data)['scope'] AS VARCHAR)            AS scope,
+          CAST(PARSE_JSON(data)['effective_time'] AS TIMESTAMP) AS effective_time,
+          broker_ts,
+          ROW_NUMBER() OVER (PARTITION BY airport, restriction_type ORDER BY broker_ts DESC) AS rn
+      FROM active_restriction_raw
+      WHERE airport IS NOT NULL
+  ) WHERE rn = 1
+    AND NOW() <= broker_ts + INTERVAL '2' HOUR;
+columns:
+  - {name: airport, type: VARCHAR, description: ICAO airport identifier (key)}
+  - {name: restriction_type, type: VARCHAR, description: "GDP, APREQ, GROUND_STOP, ... (key)"}
+  - {name: reason, type: VARCHAR}
+  - {name: scope, type: VARCHAR, description: Affected scope (e.g. a departure fix or center)}
+  - {name: effective_time, type: TIMESTAMP}
+key_columns: [airport, restriction_type]
+event_time_column: effective_time
+changelog: full
+append_only: true  # restriction declarations arrive insert-only over the mesh
+ingestable: true
+volatile_columns: []

@@ -1,0 +1,30 @@
+kind: manifest
+name: arrival-capacity
+description: "FAA arrival-capacity solution — event-mesh gateway + fast/slow workflow + triage decider and System-2 specialists consuming the Continuum arrival-capacity-breach trigger on local SAM at localhost:8800."
+target:
+  url: "http://127.0.0.1:8800"
+  auth:
+    type: bearer_token
+    envVar: SAM_PLATFORM_TOKEN
+resources:
+  # arrival_decider (OpenAI Decisions model) must exist before the workflow that
+  # binds it — apply creates models before workflows, so listing it here keeps the
+  # solution self-contained for `make apply-reference`.
+  models:
+    - arrival_decider
+  agents:
+    # No-tools triage decider (used by the llm-decider alternative; discoverable).
+    - arrival_triage_decider
+    # System-2 brief team (slow path, ESCALATE-only). Specialists are discoverable
+    # peers; the Lead Briefer delegates to them. They reference the platform
+    # `general`/`investigation` models and the `continuum-mcp` connector by name
+    # (deployed by `make apply` before this solution is applied).
+    - arrival_weather_context
+    - arrival_downstream_impact
+    - arrival_capacity_trend
+    - arrival_repositioning
+    - arrival_lead_briefer
+  workflows:
+    - ArrivalCapacityWorkflow
+  entrypoints:
+    - arrival_capacity_gateway

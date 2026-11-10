@@ -1,0 +1,222 @@
+kind: workflow
+name: WindArrivalRiskWorkflow
+description: "Arrival-capacity decision workflow (fast triage + conditional slow brief). A native OpenAI Decisions API decision node triages every demand-exceeds-rate breach in ~0.2s — does it matter, will it materialize, does it self-resolve, escalate or suppress; when it flags ESCALATE, a second stage runs a System-2 investigation (Lead Briefer delegating to three specialist peers doing live Continuum lookups) and the combined decision+brief is published. Non-escalated breaches publish the fast triage only. ADVISORY ONLY — decision support, never automated TMI issuance. Requires the workflow_decision_node feature flag."
+spec:
+  appConfig:
+    description: "Fast triage (OpenAI Decisions API decision node) + an ESCALATE-only slow brief (Lead Briefer + peer specialists). One workflow, one decision topic; the slow stage is a when-gated agent fan-out."
+    version: "1.0.0"
+    # Peer delegation inside the brief node (Lead -> 3 specialists) nests one
+    # agent-call level below the workflow; give the DAG headroom for it.
+    max_call_depth: 5
+    # Resilience: don't abort the whole workflow if the slow brief fails/times out —
+    # let output_mapping still publish the fast triage (brief null). The slow stage
+    # is best-effort on top of the always-on fast triage.
+    fail_fast: false
+    input_schema:
+      type: object
+      properties:
+        airport: { type: string }
+        demand: { type: string }
+        bin_capacity: { type: string }
+        overage: { type: string }
+        flight_category: { type: string }
+        visibility_sm: { type: string }
+        wind_speed_kt: { type: string }
+      required: [airport]
+    # The OpenAI Decisions API is bound as a decision MODEL (../models/wind_decider.yaml)
+    # and referenced by alias here. The node calls POST /v1/decisions natively. Requires
+    # SAM_FEATURE_WORKFLOW_DECISION_NODE=true on BOTH the host CLI and the sam runtime.
+    decision:
+      model_alias: wind_decider
+    nodes:
+      - id: triage
+        type: decision
+        # The event-mesh gateway delivers the trigger as the workflow's TEXT input
+        # (workflow.input = {"text": "<trigger JSON>"}); the fields are NOT addressable
+        # as workflow.input.<field>. This `input` object is the decision "state".
+        input:
+          event_json: "{{workflow.input.text}}"
+          detection: "A WEATHER-DRIVEN ARRIVAL-RISK event fired: Continuum detected that an airport's rolling-hour expected-arrival DEMAND is at or over its PUBLISHED arrival rate (AAR) *while weather is IFR or LIFR* — i.e. low ceilings/visibility are themselves constraining the achievable arrival rate. This event fires ONLY under degraded weather, so it is weather-driven BY CONSTRUCTION. The JSON in `event_json` describes ONE such event. Fields: airport (who); bin_start / bin_end (the rolling 60-min window); demand (expected arrivals in the window); bin_capacity (the AAR in effect, arrivals/hour); overage = demand - bin_capacity (may be 0 at exactly-at-rate); flight_category (IFR or LIFR); visibility_sm (statute miles); wind_speed_kt; wx_string (raw METAR). The detection is confirmed by Continuum; your job is TRIAGE: cut alert fatigue by judging whether THIS weather-driven breach matters and what to do with it. You are DECISION SUPPORT ONLY — you never issue a traffic-management initiative; you decide whether a human traffic manager should look now. Judge materialization from the overage size and how degraded the weather is (LIFR with low visibility and a real overage is far more likely to bite than a just-at-rate bin in marginal IFR). Judge self-resolution from how marginal the overage is and whether the weather is severe/persistent (LIFR rarely self-clears quickly). Judge impact from the overage relative to AAR, the weather severity, and the airport's role. ESCALATE takes precedence: a SEVERE, weather-driven overage that will not self-resolve MUST be escalated for a decision brief — the fact that weather is the known cause does not remove the need for the manager's options (GDP / miles-in-trail / reroute / hold). Reserve GROUP for a marginal overage that is merely a minor facet of the weather event; SUPPRESS the transient and just-at-rate under improving/marginal conditions."
+        questions:
+          will_materialize:
+            type: choice
+            instructions: "How likely is this weather-driven overage to actually bite, judging the overage size and how degraded the weather is (flight_category, visibility_sm, wind_speed_kt) together — not either alone?"
+            criteria:
+              YES_LIKELY: "A real overage (demand clearly over AAR) under genuinely degraded weather (LIFR, or IFR with low visibility / strong winds) — the reduced rate is firm and the backlog will very likely occur."
+              UNCERTAIN: "Mixed signals — a modest overage, or marginal IFR that could lift; the shortfall may or may not materialize."
+              UNLIKELY: "Just at rate (overage ~0) or weather on the better edge of IFR that is likely to improve — the shortfall may not materialize."
+          self_resolves:
+            type: choice
+            instructions: "Absent intervention, is this breach likely to clear on its own shortly?"
+            criteria:
+              LIKELY: "Marginal overage, benign/improving weather, no restriction in effect — the kind of blip that clears as the rolling window advances."
+              UNLIKELY: "A sustained or large overage, or degraded weather (IFR/LIFR) or an active restriction — it will persist or worsen without action."
+          impact:
+            type: choice
+            instructions: "If nothing is done, how significant is the expected arrival delay/disruption?"
+            criteria:
+              SEVERE: "Large overage relative to AAR (severity SEVERE), or a major hub / degraded weather — meaningful delays that will cascade to downstream airports."
+              MODERATE: "A clear but contained overage (severity MODERATE) — noticeable delay, limited cascade."
+              MINOR: "Marginal overage (severity MARGINAL) — little practical delay."
+          is_upstream_symptom:
+            type: boolean
+            instructions: "Is this breach most likely a SYMPTOM of a wider event (weather at this airport, or an existing restriction/GDP) rather than an independent capacity problem?"
+            criteria:
+              "true": "Degraded weather (IFR/LIFR) or an active restriction is present — the breach is a facet of that event and should be folded into it."
+              "false": "No obvious wider cause — the capacity pressure appears to stand on its own."
+          action:
+            type: choice
+            instructions: "What should happen to THIS alert right now? The goal is to cut alert fatigue: escalate only what a traffic manager must see now. ESCALATE takes PRECEDENCE — decide ESCALATE first, and only consider GROUP or SUPPRESS if the ESCALATE test fails."
+            criteria:
+              ESCALATE: "Raise for a decision brief NOW. Use whenever impact is SEVERE and the breach will NOT self-resolve (self_resolves UNLIKELY) — a severe, durable capacity shortfall needs a human and a brief EVEN IF it is weather-driven or a restriction is already in play (the manager still needs options). Also use when impact is MODERATE and will_materialize is YES_LIKELY. These are the breaches worth a human's attention; this test is checked BEFORE GROUP."
+              GROUP: "Fold into a wider incident rather than paging separately — use ONLY when the ESCALATE test fails AND is_upstream_symptom is true: i.e. the breach is a facet of a weather/restriction event already in play AND its own impact is not SEVERE-and-durable. A minor/moderate symptom of a larger event, not a crisis in its own right."
+              SUPPRESS: "Do not raise. Use for transient/marginal breaches: will_materialize UNLIKELY, or impact MINOR, or self_resolves LIKELY — the noise that causes alert fatigue."
+          case_priority:
+            type: choice
+            instructions: "If escalated, what priority should the brief carry?"
+            criteria:
+              HIGH: "Impact SEVERE and will_materialize YES_LIKELY — immediate attention."
+              MEDIUM: "Impact MODERATE, or SEVERE but uncertain — attention soon."
+              LOW: "Grouped or suppressed breaches — informational."
+      # ── Interim publish: emit the fast triage verdict the instant it answers, in ──
+      # PARALLEL with the slow brief (both depend_on triage). Gated on ESCALATE — a
+      # non-escalated breach already gets its only decision in ~0.3s via the entrypoint.
+      # airport is NOT passed here: the connector sources it from gateway forward-context.
+      - id: publish_triage
+        type: tool
+        depends_on: [triage]
+        when: '"{{triage.output.answers.action.choice}}" == "ESCALATE"'
+        connector: event-mesh-publish
+        tool: publish_triage
+        input:
+          stage: "triage"
+          action: "{{triage.output.answers.action.choice}}"
+          will_materialize: "{{triage.output.answers.will_materialize.choice}}"
+          impact: "{{triage.output.answers.impact.choice}}"
+          case_priority: "{{triage.output.answers.case_priority.choice}}"
+          confidence: "{{triage.output.answers.action.confidence}}"
+          decided_by: "Decisions API (microsoft-decision-1 via LiteLLM)"
+          event: "{{workflow.input.text}}"
+      # ── Slow stage (System 2): EXPLICIT fan-out, runs ONLY when action = ESCALATE ──
+      # Three specialist agent nodes run in PARALLEL off `triage` (each does one live
+      # Continuum query via its connector), then the Lead Briefer synthesises their
+      # outputs into the decision brief. Authored as real DAG nodes so the fan-out
+      # shows in the SAM workflow graph: Triage → [weather, downstream, trend] → brief.
+      #
+      # when-gate syntax: the engine FIRST interpolates {{...}}, THEN evaluates the
+      # result as an expr-lang expression against an EMPTY env. So the interpolated
+      # value MUST be QUOTED to become a string literal — unquoted it is read as an
+      # identifier and fails the node AND the whole workflow. (See CUSTOMIZE.md §4.)
+      # To also brief GROUP-ed breaches later, widen each gate to e.g.:
+      #   '"{{triage.output.answers.action.choice}}" in ["ESCALATE","GROUP"]'
+      - id: weather
+        type: agent
+        depends_on: [triage]
+        when: '"{{triage.output.answers.action.choice}}" == "ESCALATE"'
+        agent_name: wind_risk_weather_context
+        instruction: "{{workflow.input.text}}"
+        timeout: 90s
+        output_schema_override:
+          type: object
+          properties:
+            specialist: { type: string }
+            weather_summary: { type: string }
+            restriction_summary: { type: string }
+            is_weather_driven: { type: string }
+            finding: { type: string }
+            confidence: { type: number }
+          required: [finding]
+      - id: downstream
+        type: agent
+        depends_on: [triage]
+        when: '"{{triage.output.answers.action.choice}}" == "ESCALATE"'
+        agent_name: wind_risk_downstream_impact
+        instruction: "{{workflow.input.text}}"
+        timeout: 90s
+        output_schema_override:
+          type: object
+          properties:
+            specialist: { type: string }
+            airports_at_risk: { type: array }
+            cascade_risk: { type: string }
+            finding: { type: string }
+            confidence: { type: number }
+          required: [finding]
+      - id: trend
+        type: agent
+        depends_on: [triage]
+        when: '"{{triage.output.answers.action.choice}}" == "ESCALATE"'
+        agent_name: wind_risk_trend
+        instruction: "{{workflow.input.text}}"
+        timeout: 90s
+        output_schema_override:
+          type: object
+          properties:
+            specialist: { type: string }
+            trend: { type: string }
+            peak_overage: { type: number }
+            finding: { type: string }
+            confidence: { type: number }
+          required: [finding]
+      # Lead synthesis node: depends on ALL THREE specialists, fed their outputs + the
+      # raw event. timeout/fail_fast: a specialist that fails/times out skips brief →
+      # the fast triage still publishes (brief null) rather than being lost.
+      - id: brief
+        type: agent
+        depends_on: [weather, downstream, trend]
+        when: '"{{triage.output.answers.action.choice}}" == "ESCALATE"'
+        agent_name: wind_risk_briefer
+        instruction: |
+          Synthesise the wind-arrival-risk decision brief from these inputs.
+          ADVISORY ONLY — recommend options with tradeoffs; never issue a TMI.
+
+          event:
+          {{workflow.input.text}}
+
+          weather_context findings:
+          {{weather.output}}
+
+          downstream_impact findings:
+          {{downstream.output}}
+
+          capacity_trend findings:
+          {{trend.output}}
+        timeout: 120s
+        output_schema_override:
+          type: object
+          properties:
+            headline: { type: string }
+            whats_happening: { type: string }
+            why: { type: string }
+            confidence: { type: number }
+            downstream_airports_at_risk: { type: array }
+            options: { type: array }
+            provenance: { type: array }
+          required: [headline]
+    output_mapping:
+      action: "{{triage.output.answers.action.choice}}"
+      will_materialize: "{{triage.output.answers.will_materialize.choice}}"
+      self_resolves: "{{triage.output.answers.self_resolves.choice}}"
+      impact: "{{triage.output.answers.impact.choice}}"
+      is_upstream_symptom: "{{triage.output.answers.is_upstream_symptom.probability}}"
+      case_priority: "{{triage.output.answers.case_priority.choice}}"
+      confidence: "{{triage.output.answers.action.confidence}}"
+      # The System-2 decision brief — the WHOLE Lead Briefer output as one object.
+      # Null when the brief node was skipped (not escalated): consumers treat a
+      # null/absent brief as "triaged, no escalation".
+      brief: "{{brief.output}}"
+      airport: "{{workflow.input.text}}"
+      event: "{{workflow.input.text}}"
+      decided_by: "Decisions API (microsoft-decision-1 via LiteLLM)"
+      advisory_notice: "Decision support only — not an automated traffic-management initiative."
+      rationale:
+        concat:
+          - "Arrival-capacity breach (see event): rolling-hour demand exceeded the published AAR. Triage action: "
+          - "{{triage.output.answers.action.choice}}"
+          - " (confidence "
+          - "{{triage.output.answers.action.confidence}}"
+          - "); will materialize: "
+          - "{{triage.output.answers.will_materialize.choice}}"
+          - "; impact: "
+          - "{{triage.output.answers.impact.choice}}"
+          - " — Decisions API (microsoft-decision-1 via LiteLLM). Advisory only."

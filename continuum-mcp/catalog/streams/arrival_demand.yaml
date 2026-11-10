@@ -1,0 +1,28 @@
+name: arrival_demand
+kind: derived
+description: >-
+  Rolling 60-minute arrival demand per airport, sliding every 15 minutes — the
+  flight count expected in each bin and how much of it is backed by a high-quality
+  ETA. A windowed aggregate computed inside the base pipeline; it is not republished
+  as a broker stream and cannot be a source of a new data product directly.
+  preview_query can still read it.
+relation: arrival_demand
+base_pipeline: arrival-capacity
+topic_subscriptions: []
+topic_pattern: null
+columns:
+  - {name: airport, type: VARCHAR, description: ICAO airport identifier (key)}
+  - {name: bin_start, type: TIMESTAMP, description: Start of the rolling demand bin (key)}
+  - {name: bin_end, type: TIMESTAMP}
+  - {name: demand, type: BIGINT, description: Expected arrivals in the bin}
+  - {name: high_quality_eta_count, type: BIGINT, description: Arrivals in the bin with a TTPFD/TBFM ETA}
+key_columns: [airport, bin_start]
+event_time_column: bin_start
+changelog: full
+ingestable: false
+volatile_columns: [demand, high_quality_eta_count]
+hint: >-
+  Not ingestable: 'arrival_demand' is a windowed aggregate inside the base pipeline,
+  not a broker stream. Use the derived 'capacity_assessment' (demand already joined
+  to the rate in effect) as a product source instead; preview_query can still read
+  arrival_demand directly.

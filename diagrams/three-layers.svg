@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#093B5F"/>
+      <stop offset="100%" stop-color="#03213B"/>
+    </linearGradient>
+    <linearGradient id="panelGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0E4870"/>
+      <stop offset="100%" stop-color="#093B5F"/>
+    </linearGradient>
+    <marker id="arrowHead" markerWidth="40" markerHeight="34" refX="32" refY="17" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L40,17 L0,34 Z" fill="#00C895"/>
+    </marker>
+  </defs>
+
+  <!-- Canvas background -->
+  <rect x="0" y="0" width="1920" height="1080" fill="url(#bgGrad)"/>
+
+  <!-- Title -->
+  <text x="120" y="130" font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="600" font-size="64" fill="#FFFFFF">One Platform. Three Layers.</text>
+  <text x="120" y="176" font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="400" font-size="28" fill="#8FB3C9">Move it. Understand it. Act on it — in real time.</text>
+
+  <!-- ===================== PANEL 1: Event Mesh (x100-560) ===================== -->
+  <g>
+    <rect x="100" y="300" width="460" height="560" rx="28" fill="url(#panelGrad)" stroke="#145178" stroke-width="2"/>
+
+    <!-- kicker -->
+    <text x="150" y="368" font-family="'Space Mono',ui-monospace,Menlo,monospace" font-size="22" letter-spacing="3" fill="#00C895">MOVE</text>
+
+    <!-- glyph: connected nodes -->
+    <g stroke="#00C895" stroke-width="4" fill="none">
+      <line x1="220" y1="470" x2="310" y2="430"/>
+      <line x1="220" y1="470" x2="310" y2="510"/>
+      <line x1="310" y1="430" x2="400" y2="470"/>
+      <line x1="310" y1="510" x2="400" y2="470"/>
+      <line x1="220" y1="470" x2="180" y2="430"/>
+      <line x1="220" y1="470" x2="180" y2="510"/>
+    </g>
+    <g fill="#ABFF88">
+      <circle cx="220" cy="470" r="14"/>
+      <circle cx="310" cy="430" r="10"/>
+      <circle cx="310" cy="510" r="10"/>
+      <circle cx="400" cy="470" r="10"/>
+      <circle cx="180" cy="430" r="8"/>
+      <circle cx="180" cy="510" r="8"/>
+    </g>
+
+    <!-- name -->
+    <text x="150" y="620" font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="600" font-size="48" fill="#FFFFFF">Event Mesh</text>
+
+    <!-- descriptor -->
+    <text font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="400" font-size="26" fill="#8FB3C9">
+      <tspan x="150" y="672">Every business event,</tspan>
+      <tspan x="150" y="708">the instant it happens.</tspan>
+    </text>
+  </g>
+
+  <!-- Arrow 1: panel1 (ends 560) -> panel2 (starts 730) -->
+  <line x1="580" y1="580" x2="722" y2="580" stroke="#00C895" stroke-width="10" marker-end="url(#arrowHead)"/>
+
+  <!-- ===================== PANEL 2: Continuum (x730-1190) ===================== -->
+  <g>
+    <rect x="730" y="300" width="460" height="560" rx="28" fill="url(#panelGrad)" stroke="#145178" stroke-width="2"/>
+
+    <!-- kicker -->
+    <text x="780" y="368" font-family="'Space Mono',ui-monospace,Menlo,monospace" font-size="22" letter-spacing="3" fill="#00C895">UNDERSTAND</text>
+
+    <!-- glyph: stacked layers / table -->
+    <g>
+      <rect x="810" y="418" width="240" height="34" rx="6" fill="#00C895"/>
+      <rect x="810" y="462" width="240" height="34" rx="6" fill="#00C895" opacity="0.75"/>
+      <rect x="810" y="506" width="240" height="34" rx="6" fill="#ABFF88" opacity="0.9"/>
+    </g>
+
+    <!-- name -->
+    <text x="780" y="620" font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="600" font-size="48" fill="#FFFFFF">Continuum</text>
+
+    <!-- descriptor -->
+    <text font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="400" font-size="26" fill="#8FB3C9">
+      <tspan x="780" y="672">Events become live data</tspan>
+      <tspan x="780" y="708">products. A trigger fires</tspan>
+      <tspan x="780" y="744">the moment it matters.</tspan>
+    </text>
+  </g>
+
+  <!-- Arrow 2: panel2 (ends 1190) -> panel3 (starts 1360) -->
+  <line x1="1210" y1="580" x2="1352" y2="580" stroke="#00C895" stroke-width="10" marker-end="url(#arrowHead)"/>
+
+  <!-- ===================== PANEL 3: Agent Mesh (x1360-1820) ===================== -->
+  <g>
+    <rect x="1360" y="300" width="460" height="560" rx="28" fill="url(#panelGrad)" stroke="#145178" stroke-width="2"/>
+
+    <!-- kicker -->
+    <text x="1410" y="368" font-family="'Space Mono',ui-monospace,Menlo,monospace" font-size="22" letter-spacing="3" fill="#00C895">ACT</text>
+
+    <!-- glyph: spark / bolt -->
+    <g fill="#ABFF88">
+      <path d="M1500,415 L1450,510 L1488,510 L1475,565 L1535,470 L1495,470 Z"/>
+    </g>
+
+    <!-- name -->
+    <text x="1410" y="620" font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="600" font-size="48" fill="#FFFFFF">Agent Mesh</text>
+
+    <!-- descriptor -->
+    <text font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="400" font-size="26" fill="#8FB3C9">
+      <tspan x="1410" y="672">AI wakes on the trigger,</tspan>
+      <tspan x="1410" y="708">decides, and publishes</tspan>
+      <tspan x="1410" y="744">the outcome.</tspan>
+    </text>
+  </g>
+
+  <!-- Footer strip -->
+  <text x="960" y="990" text-anchor="middle" font-family="'Space Mono',ui-monospace,Menlo,monospace" font-size="22" letter-spacing="2" fill="#8FB3C9">REAL-TIME &#183; STRONGLY CONSISTENT &#183; GOVERNED</text>
+</svg>

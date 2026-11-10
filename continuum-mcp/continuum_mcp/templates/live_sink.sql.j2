@@ -1,0 +1,27 @@
+-- Live changelog of {{ view_name }} -> {{ topic }} (full changelog: inserts and deletes)
+CREATE MATERIALIZED VIEW {{ view_name }}_live_sink
+WITH ('connectors' = '[{
+    "name": "cp-{{ slug }}-live",
+    "transport": {
+        "name": "solace_output",
+        "config": {
+            "host":     "{{ broker.host }}",
+            "port":     {{ broker.port }},
+            "vpn":      "{{ broker.vpn }}",
+            "username": "{{ broker.username }}",
+            "password": "{{ broker.password }}",
+            "topic":    "{{ topic }}",
+            "delivery_mode": "direct"
+        }
+    },
+    "format": {"name": "json"}
+}]')
+AS SELECT
+{% for col in columns %}
+{% if col in placeholder_columns %}
+    COALESCE(CAST({{ col }} AS VARCHAR), 'unknown') AS {{ col }}{{ "," if not loop.last }}
+{% else %}
+    {{ col }}{{ "," if not loop.last }}
+{% endif %}
+{% endfor %}
+FROM {{ view_name }};

@@ -1,0 +1,29 @@
+kind: manifest
+name: wind-arrival-risk
+description: "FAA wind-arrival-risk solution — event-mesh gateway + fast/slow workflow + triage decider and System-2 specialists consuming the Continuum wind-arrival-risk-breach trigger on local SAM at localhost:8800."
+target:
+  url: "http://127.0.0.1:8800"
+  auth:
+    type: bearer_token
+    envVar: SAM_PLATFORM_TOKEN
+resources:
+  # wind_decider (OpenAI Decisions model) must exist before the workflow that
+  # binds it — apply creates models before workflows, so listing it here keeps the
+  # solution self-contained for `make apply-reference`.
+  models:
+    - wind_decider
+  agents:
+    # No-tools triage decider (used by the llm-decider alternative; discoverable).
+    - wind_risk_decider
+    # System-2 brief team (slow path, ESCALATE-only). Specialists are discoverable
+    # peers; the Lead Briefer delegates to them. They reference the platform
+    # `general`/`investigation` models and the `continuum-mcp` connector by name
+    # (deployed by `make apply` before this solution is applied).
+    - wind_risk_weather_context
+    - wind_risk_downstream_impact
+    - wind_risk_trend
+    - wind_risk_briefer
+  workflows:
+    - WindArrivalRiskWorkflow
+  entrypoints:
+    - wind_arrival_risk_gateway

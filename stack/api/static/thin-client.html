@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Continuum FAA — Thin Client</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+:root {
+  --dark-blue:    #03213B;
+  --deep-blue:    #093B5F;
+  --classic-green:#00C895;
+  --bright-green: #ABFF88;
+  --orange:       #FCA829;
+  --red:          #FF4444;
+  --sky-blue:     #C2F7FF;
+  --muted-blue:   #7FA8C9;
+  --text:         #E8F4FF;
+  --text-muted:   #7FA8C9;
+  --border:       rgba(0,200,149,0.18);
+  --panel:        rgba(9,59,95,0.55);
+  --font-body:    Figtree, 'Segoe UI', sans-serif;
+  --font-mono:    'Space Mono', 'Cascadia Mono', monospace;
+}
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+html,body { height: 100%; }
+body {
+  background: var(--dark-blue);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+header {
+  flex-shrink: 0;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  background: linear-gradient(135deg, #03213B 0%, #093B5F 100%);
+  border-bottom: 1px solid var(--border);
+  gap: 14px;
+}
+.back-link {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--classic-green);
+  text-decoration: none;
+  border: 1px solid rgba(0,200,149,0.3);
+  padding: 4px 10px;
+  border-radius: 4px;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.back-link:hover { background: rgba(0,200,149,0.1); }
+.header-divider { width: 1px; height: 24px; background: var(--border); flex-shrink: 0; }
+.header-title {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.header-sub {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.conn-indicator {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.conn-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.conn-dot.live         { background: var(--bright-green); animation: pulse-dot 1.5s ease-in-out infinite; }
+.conn-dot.reconnecting { background: var(--orange); animation: pulse-dot 0.7s ease-in-out infinite; }
+.conn-dot.stale        { background: var(--red); }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+.table-wrap { flex: 1; overflow-y: auto; }
+.table-wrap::-webkit-scrollbar { width: 4px; }
+.table-wrap::-webkit-scrollbar-thumb { background: rgba(0,200,149,0.2); border-radius: 2px; }
+
+table.live-table { border-collapse: collapse; width: 100%; font-family: var(--font-mono); font-size: 11px; }
+table.live-table th {
+  background: rgba(9,59,95,0.98);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  padding: 7px 12px;
+  text-align: left;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+table.live-table td { padding: 6px 12px; border-bottom: 1px solid rgba(127,168,201,0.07); white-space: nowrap; }
+table.live-table tr:hover td { background: rgba(0,200,149,0.04); }
+tr.new-row td { animation: row-flash 0.45s ease forwards; }
+@keyframes row-flash { 0%{background:rgba(0,200,149,0.14)} 100%{background:transparent} }
+.amount-col { color: var(--orange); text-align: right; }
+.chan-col { color: var(--text-muted); }
+.venue-col { color: var(--text); }
+.decision-badge { display: inline-block; font-size: 9px; padding: 2px 8px; border-radius: 10px; border: 1px solid; }
+.dec-approve { color: var(--classic-green); border-color: rgba(0,200,149,0.4); background: rgba(0,200,149,0.07); }
+.dec-review  { color: var(--orange); border-color: rgba(252,168,41,0.4); background: rgba(252,168,41,0.07); }
+.dec-decline { color: var(--red); border-color: rgba(255,68,68,0.4); background: rgba(255,68,68,0.07); }
+
+.topic-col { color: rgba(127,168,201,0.55); font-size: 9px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+
+.status-bar {
+  flex-shrink: 0;
+  height: 28px;
+  border-top: 1px solid var(--border);
+  background: rgba(3,33,59,0.85);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 16px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.status-sep { color: rgba(127,168,201,0.3); }
+
+.no-venue {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.no-venue-title { font-size: 16px; color: var(--text); }
+.no-venue-hint  { font-size: 11px; letter-spacing: 0.06em; }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="back-link" href="/">← MAP</a>
+  <div class="header-divider"></div>
+  <div>
+    <div class="header-title" id="header-title">THIN CLIENT</div>
+    <div class="header-sub" id="header-sub">MQTT-WS · fl/faa/arrival-capacity/demand/{airport}</div>
+  </div>
+  <div class="conn-indicator">
+    <div class="conn-dot" id="conn-dot"></div>
+    <span id="conn-label">Connecting…</span>
+  </div>
+</header>
+
+<div id="main-area" style="flex:1;display:flex;flex-direction:column;overflow:hidden"></div>
+
+<div class="status-bar">
+  <span id="sb-topic">Topic: —</span>
+  <span class="status-sep">|</span>
+  <span id="sb-events">0 events</span>
+  <span class="status-sep">|</span>
+  <span id="sb-last">—</span>
+</div>
+
+<script>
+const params  = new URLSearchParams(location.search);
+const airport = params.get('airport') || params.get('venue') || '';
+const mainArea = document.getElementById('main-area');
+let   eventCount = 0;
+
+if (!airport) {
+  mainArea.innerHTML = `
+    <div class="no-venue">
+      <div class="no-venue-title">No airport selected</div>
+      <div class="no-venue-hint">Open from the MAP tab — click an airport, then "Open Thin Client →"</div>
+    </div>`;
+  document.getElementById('conn-dot').className = 'conn-dot stale';
+  document.getElementById('conn-label').textContent = 'No airport';
+} else {
+  const airportLabel = airport;
+  document.title   = `Thin Client — ${airportLabel}`;
+  document.getElementById('header-title').textContent = `THIN CLIENT — ${airportLabel}`;
+  const topic = `fl/faa/arrival-capacity/demand/${airport}`;
+  document.getElementById('header-sub').textContent   = `MQTT-WS · ${topic}`;
+  document.getElementById('sb-topic').textContent     = `Topic: ${topic}`;
+
+  mainArea.innerHTML = `
+    <div class="table-wrap">
+      <table class="live-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Airport</th>
+            <th>Bin start</th>
+            <th>Demand</th>
+            <th style="text-align:right">Published AAR</th>
+            <th>Status</th>
+            <th>Topic</th>
+          </tr>
+        </thead>
+        <tbody id="live-tbody"></tbody>
+      </table>
+    </div>`;
+
+  const tbody = document.getElementById('live-tbody');
+
+  function setConn(state) {
+    const dot = document.getElementById('conn-dot');
+    const lbl = document.getElementById('conn-label');
+    if (state === 'live')          { dot.className='conn-dot live';         lbl.textContent='MQTT-WS LIVE'; }
+    else if (state==='connecting') { dot.className='conn-dot reconnecting'; lbl.textContent='Connecting…'; }
+    else                           { dot.className='conn-dot stale';        lbl.textContent='Offline'; }
+  }
+
+  function statusBadge(exceeded) {
+    const u = exceeded ? 'BREACH' : 'OK';
+    const cls = exceeded ? 'dec-decline' : 'dec-approve';
+    return `<span class="decision-badge ${cls}">${u}</span>`;
+  }
+
+  function addRow(data, rawTopic) {
+    const tr   = document.createElement('tr');
+    tr.className = 'new-row';
+    const ts   = new Date().toLocaleTimeString();
+    const ap   = data.airport || '—';
+    const bin  = (data.bin_start || '').slice(11) || '—';
+    const demand = data.demand != null ? data.demand : '—';
+    const aar  = data.bin_capacity != null ? data.bin_capacity
+               : (data.published_aar != null ? data.published_aar : '—');
+    const exceeded = data.exceeded != null ? !!data.exceeded
+                   : (data.demand != null && data.bin_capacity != null ? Number(data.demand) > Number(data.bin_capacity) : false);
+
+    tr.innerHTML = `
+      <td>${ts}</td>
+      <td class="venue-col">${ap}</td>
+      <td class="chan-col">${bin}</td>
+      <td>${demand}</td>
+      <td class="amount-col">${aar}</td>
+      <td>${statusBadge(exceeded)}</td>
+      <td class="topic-col" title="${rawTopic}">${rawTopic}</td>
+    `;
+    tbody.prepend(tr);
+
+    // Keep max 100 rows
+    while (tbody.rows.length > 100) tbody.deleteRow(-1);
+
+    eventCount++;
+    document.getElementById('sb-events').textContent = eventCount.toLocaleString() + ' events';
+    document.getElementById('sb-last').textContent   = 'Last: ' + ts;
+  }
+
+  const client = mqtt.connect(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/fx/mqtt`, {
+    clientId:      'thin-' + Math.random().toString(16).slice(2,8),
+    username:      'default',
+    password:      'default',
+    clean:         true,
+    reconnectPeriod: 3000,
+    connectTimeout:  8000,
+  });
+
+  client.on('connect', () => {
+    client.subscribe(topic);
+    setConn('live');
+  });
+
+  client.on('message', (msgTopic, message) => {
+    let data; try { data = JSON.parse(message.toString()); } catch { return; }
+    addRow(data, msgTopic);
+  });
+
+  client.on('error',   () => setConn('connecting'));
+  client.on('offline', () => setConn('connecting'));
+  client.on('close',   () => setConn('connecting'));
+
+  setConn('connecting');
+}
+</script>
+</body>
+</html>

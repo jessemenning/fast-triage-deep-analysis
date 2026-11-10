@@ -1,0 +1,49 @@
+name: weather
+kind: raw
+description: >-
+  Latest METAR weather observation per station (flight category, wind, visibility
+  and the raw ob). Latest report per station wins. This is the event-mesh weather
+  feed used to enrich a capacity breach for the decision brief; join it to a rate
+  or demand relation on station_id = airport (ICAO).
+relation: metar_latest
+base_pipeline: arrival-capacity
+topic_subscriptions:
+  - aviation/metar/>
+topic_pattern: aviation/metar/{station_id}
+ddl: |
+  CREATE TABLE metar_latest_raw (
+      data       VARCHAR,
+      station_id VARCHAR DEFAULT CAST(CONNECTOR_METADATA()['station_id'] AS VARCHAR)
+  )
+decode_sql: |
+  CREATE MATERIALIZED VIEW metar_latest AS
+  SELECT station_id, observed_at, flight_category, wind_dir_degrees, wind_speed_kt,
+         visibility_sm, wx_string
+  FROM (
+      SELECT
+          CAST(PARSE_JSON(data)['icaoId'] AS VARCHAR)       AS station_id,
+          CAST(PARSE_JSON(data)['reportTime'] AS TIMESTAMP) AS observed_at,
+          CAST(PARSE_JSON(data)['fltCat'] AS VARCHAR)       AS flight_category,
+          CASE WHEN CAST(PARSE_JSON(data)['wdir'] AS VARCHAR) RLIKE '^[0-9]+$'
+               THEN CAST(PARSE_JSON(data)['wdir'] AS INTEGER) END AS wind_dir_degrees,
+          CAST(PARSE_JSON(data)['wspd'] AS INTEGER)         AS wind_speed_kt,
+          CAST(PARSE_JSON(data)['visib'] AS VARCHAR)        AS visibility_sm,
+          CAST(PARSE_JSON(data)['rawOb'] AS VARCHAR)        AS wx_string,
+          ROW_NUMBER() OVER (PARTITION BY CAST(PARSE_JSON(data)['icaoId'] AS VARCHAR)
+                             ORDER BY CAST(PARSE_JSON(data)['reportTime'] AS TIMESTAMP) DESC) AS rn
+      FROM metar_latest_raw
+  ) WHERE rn = 1;
+columns:
+  - {name: station_id, type: VARCHAR, description: ICAO station identifier (key)}
+  - {name: observed_at, type: TIMESTAMP, description: Observation time of this report}
+  - {name: flight_category, type: VARCHAR, description: "VFR, MVFR, IFR or LIFR"}
+  - {name: wind_dir_degrees, type: INTEGER}
+  - {name: wind_speed_kt, type: INTEGER}
+  - {name: visibility_sm, type: VARCHAR, description: Visibility in statute miles (string; may be e.g. '10+')}
+  - {name: wx_string, type: VARCHAR, description: Raw METAR observation}
+key_columns: [station_id]
+event_time_column: observed_at
+changelog: full
+append_only: true  # METAR reports arrive insert-only over the mesh
+ingestable: true
+volatile_columns: []

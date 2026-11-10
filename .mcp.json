@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "continuum": {
+      "type": "http",
+      "url": "http://localhost:8091/mcp",
+      "headers": { "Authorization": "Bearer ${CONTINUUM_MCP_TOKEN}" }
+    },
+    "event-portal": {
+      "type": "http",
+      "url": "http://localhost:8092/mcp",
+      "headers": { "Authorization": "Bearer ${EP_MCP_TOKEN}" }
+    }
+  }
+}

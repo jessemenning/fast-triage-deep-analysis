@@ -1,0 +1,27 @@
+{
+	admin off
+}
+
+# Single-password gate in front of the Feldera Web Console.
+#
+# Path: ALB :8081 → host :8082 → this proxy → feldera:8080 (the console).
+# The console itself has no auth and exposes full pipeline control, so it is
+# never published directly — only through this basic-auth proxy.
+#
+# NOTE: the ALB terminates HTTP only (no cert/domain), so basic-auth credentials
+# travel base64-encoded but NOT encrypted. Acceptable for staging only.
+:8082 {
+	# Unauthenticated health endpoint for the ALB target group.
+	handle /caddy-health {
+		respond "ok" 200
+	}
+
+	# Everything else: one shared login, then reverse-proxy to the console.
+	# reverse_proxy transparently handles the console's websocket/SSE upgrades.
+	handle {
+		basic_auth {
+			{$FELDERA_CONSOLE_USER} {$FELDERA_CONSOLE_HASH}
+		}
+		reverse_proxy feldera:8080
+	}
+}

@@ -1,0 +1,49 @@
+# ALTERNATIVE — not loaded by `sam config apply` (lives outside workflows/).
+# The LLM-decider version of WindArrivalRiskWorkflow: one `agent` node →
+# wind_risk_decider (Haiku) via structured invocation. Kept for A/B against the
+# native OpenAI Decisions decision-node version in ../workflows/. To use it:
+#   cp alternatives/WindArrivalRiskWorkflow.llm-decider.yaml workflows/WindArrivalRiskWorkflow.yaml
+#   make apply-reference && docker compose restart sam
+kind: workflow
+name: WindArrivalRiskWorkflow
+description: "Arrival-capacity triage workflow (LLM-decider variant): takes the wind-arrival-risk-breach trigger for one airport and runs a single agent decision node that returns an advisory triage (escalate/group/suppress) as structured JSON. Advisory only."
+spec:
+  appConfig:
+    display_name: FAA Arrival Capacity Workflow
+    description: "One agent decision node: apply alert-triage policy to an wind-arrival-risk breach event."
+    version: "2.0.0"
+    input_schema:
+      type: object
+      properties:
+        airport: { type: string }
+        airport_name: { type: string }
+        demand: { type: string }
+        bin_capacity: { type: string }
+        overage: { type: string }
+        severity: { type: string }
+      required: [airport]
+    nodes:
+      - id: triage
+        type: agent
+        agent_name: wind_risk_decider
+        instruction: "{{workflow.input}}"
+        output_schema_override:
+          type: object
+          properties:
+            action: { type: string }
+            will_materialize: { type: string }
+            impact: { type: string }
+            case_priority: { type: string }
+            airport: { type: string }
+            airport_name: { type: string }
+            rationale: { type: string }
+          required: [action, airport]
+    output_mapping:
+      action: "{{triage.output.action}}"
+      will_materialize: "{{triage.output.will_materialize}}"
+      impact: "{{triage.output.impact}}"
+      case_priority: "{{triage.output.case_priority}}"
+      airport: "{{triage.output.airport}}"
+      airport_name: "{{triage.output.airport_name}}"
+      rationale: "{{triage.output.rationale}}"
+      advisory_notice: "Decision support only — not an automated traffic-management initiative."

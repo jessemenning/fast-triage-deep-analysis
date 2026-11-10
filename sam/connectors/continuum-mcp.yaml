@@ -1,0 +1,16 @@
+kind: connector
+name: continuum-mcp
+description: "Continuum MCP — the streaming-data layer of the Solace Platform. Lists source streams and SQL-defined data products (business objects / live views built Ingest -> Refine -> Join -> Trigger), previews SELECT-only SQL, and creates data products and triggers that publish one event per row to the Event Mesh. Registers the producer side in Event Portal."
+spec:
+  type: mcp
+  subtype: remote
+  values:
+    server_url: "${CONTINUUM_MCP_URL, http://continuum-mcp:8091/mcp}"
+    connection_type: "streamable-http"
+    auth_type: "http"
+    auth_http_scheme: "bearer"
+    auth_http_bearer_token: "${CONTINUUM_MCP_TOKEN}"
+    # Every tool surfaces to the agent as continuum_<tool>.
+    tool_name_prefix: "continuum_"
+    # Exact MCP tool names (pre-prefix) this connector exposes.
+    allow_list: "list_source_streams,list_data_products,get_data_product,search_catalog,preview_query,create_data_product,create_trigger,delete_trigger,delete_data_product,get_status,sync_event_portal"

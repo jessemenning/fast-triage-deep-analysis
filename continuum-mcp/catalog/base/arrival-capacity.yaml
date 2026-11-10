@@ -1,0 +1,83 @@
+# Materialized views of the read-only base pipeline, exposed as platform-owned
+# data products (managed: false). Continuum MCP never modifies this pipeline.
+pipeline: arrival-capacity
+description: >-
+  Continuum FAA arrival-capacity pipeline: live arrival DEMAND versus the
+  published arrival rate (AAR) per airport per rolling time bin. Ingests FDPS
+  position/flight-plan state, TTPFD per-flight ETAs, TTP Airport Information
+  rates (versioned side input), TMR traffic-management restrictions and METAR
+  weather — all as Solace events — and raises a capacity-breach event whenever
+  expected arrivals exceed the rate in effect for the bin.
+products:
+  - name: flight
+    description: One keyed row per in-bound ACTIVE flight with its arrival airport and best-available ETA (TTPFD/TBFM preferred, else filed).
+    owner: platform
+    tags: [faa, flights, eta]
+    key_columns: [gufi]
+  - name: airport_rate
+    description: Versioned published arrival/departure rate (AAR/ADR, runway config) per airport, each version valid from its effective time until the next.
+    owner: platform
+    tags: [faa, rate, aar]
+    key_columns: [airport, valid_from]
+  - name: arrival_demand
+    description: Rolling 60-minute arrival demand per airport (sliding every 15 min) — flight count and the share backed by a high-quality ETA.
+    owner: platform
+    tags: [faa, demand, time-series]
+    key_columns: [airport, bin_start]
+  - name: capacity_assessment
+    description: Demand versus the AAR in effect for each bin — overage, ETA quality and an exceeded flag. Published live for the dashboard.
+    owner: platform
+    tags: [faa, capacity, hero]
+    key_columns: [airport, bin_start]
+    live_topic: fl/faa/arrival-capacity/demand/{airport}
+  - name: capacity_breach_events
+    description: Debounced capacity breaches (material overage, sustained ≥2 bins) with a MARGINAL/MODERATE/SEVERE severity.
+    owner: platform
+    tags: [faa, breach, severity]
+    key_columns: [airport, bin_start]
+  - name: arrival_context
+    description: Capacity breach enriched with airport descriptor, latest weather and any active restriction — the agent trigger brief.
+    owner: platform
+    tags: [faa, breach, context]
+    key_columns: [airport, bin_start]
+    live_topic: fl/faa/arrival-capacity/breach/{airport}
+  - name: metar_latest
+    description: Latest METAR observation per station (flight category, wind, visibility, raw ob).
+    owner: platform
+    tags: [faa, weather, metar]
+    key_columns: [station_id]
+  - name: active_restriction
+    description: Active traffic-management restrictions (GDP/APREQ/ground stop) per airport and type, 2h freshness.
+    owner: platform
+    tags: [faa, restriction, tmr]
+    key_columns: [airport, restriction_type]
+  - name: mcp_arrival_demand
+    description: MCP tool view — current demand picture per airport (demand, capacity, overage, ETA quality, exceeded).
+    owner: platform
+    tags: [faa, mcp, demand]
+    key_columns: [airport, bin_start]
+  - name: mcp_airport_rate
+    description: MCP tool view — the rate currently in effect per airport (open-ended version).
+    owner: platform
+    tags: [faa, mcp, rate]
+    key_columns: [airport]
+  - name: mcp_active_restrictions
+    description: MCP tool view — active restrictions (TMR) for the decision brief.
+    owner: platform
+    tags: [faa, mcp, restriction]
+    key_columns: [airport, restriction_type]
+  - name: mcp_weather
+    description: MCP tool view — latest weather per station for the decision brief.
+    owner: platform
+    tags: [faa, mcp, weather]
+    key_columns: [station_id]
+  - name: mcp_downstream_risk
+    description: MCP tool view — other airports also breaching right now (cascade/downstream exposure).
+    owner: platform
+    tags: [faa, mcp, downstream]
+    key_columns: [airport, bin_start]
+  - name: mcp_inbound_flights
+    description: MCP tool view — upcoming inbound flights per airport (callsign, origin, ETA, source) for flow repositioning after a runway reconfiguration.
+    owner: platform
+    tags: [faa, mcp, flights, repositioning]
+    key_columns: [airport, gufi]

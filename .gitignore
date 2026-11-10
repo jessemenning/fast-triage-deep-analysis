@@ -1,0 +1,38 @@
+.env
+.sam-home/
+__pycache__/
+.venv/
+*.pyc
+build/
+.sf/
+.sam-docker-data/
+*.log
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+node_modules/
+uv-cache/
+.DS_Store
+# Continuum MCP runtime state (created products) — keep the dir, not its contents
+continuum-mcp/catalog/products/*
+!continuum-mcp/catalog/products/.gitkeep
+# demo build artifacts
+demo/prestage/build/
+# Local Claude tooling — regenerate with `sam ai-assistance skill install`
+# ...but keep the committed IDE authoring skill pack. Un-ignore .claude/skills/,
+# then re-ignore its generated sam-* skills so only our pack is tracked.
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/solace-solution-builder/
+!.claude/skills/faa-generate-solution/
+# Local Claude authoring skills — regenerate with `sam ai-assistance skill install`
+.agents/
+
+# demo-video build artifacts (storyboard + generated audio) — regenerate with the demo-video skill
+video-build/
+
+# prewarm marker (local warm-path state)
+.warm-path
+
+# Terraform (AWS deploy) — state holds generated secrets; tfvars holds your profile/IP

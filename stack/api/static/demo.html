@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Continuum — Live FAA Arrival Capacity</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Space+Mono&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+  :root{
+    --dark:#03213B; --deep:#093B5F; --panel:#0b2e4d; --panel2:#0e3357;
+    --green:#00C895; --bright:#ABFF88; --orange:#FCA829; --red:#FF4444;
+    --sky:#C2F7FF; --white:#fff; --muted:#7fa6c4; --line:rgba(194,247,255,.12);
+    --mono:'Space Mono',monospace; --sans:'Figtree',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--dark);color:var(--white);font-family:var(--sans);font-size:14px}
+  body{display:flex;flex-direction:column;overflow:hidden}
+  header{display:flex;align-items:center;gap:14px;padding:9px 20px;border-bottom:1px solid var(--line);background:var(--deep)}
+  header .dot{width:11px;height:11px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);animation:pulse 2s infinite}
+  header h1{font-size:15px;margin:0;font-weight:700;letter-spacing:.3px;font-family:var(--sans)}
+  header h1 .sub{font-size:11.5px;color:var(--muted);font-weight:500;margin-left:8px}
+  header .spacer{flex:1}
+  header a{color:var(--sky);font-size:12px;text-decoration:none;border:1px solid var(--line);padding:5px 10px;border-radius:6px}
+  header .conn{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  .stormbtn{font-family:var(--sans);font-size:13px;font-weight:700;cursor:pointer;border:none;border-radius:22px;padding:9px 16px;background:var(--orange);color:var(--dark);box-shadow:0 0 14px rgba(252,168,41,.4);transition:transform .1s}
+  .stormbtn:hover{transform:translateY(-1px)}
+  .stormbtn:disabled{background:var(--panel2);color:var(--muted);box-shadow:none;cursor:default}
+  .resetbtn{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.3px;cursor:pointer;border:1px solid var(--line);border-radius:22px;padding:8px 12px;background:transparent;color:var(--muted);transition:color .2s,border-color .2s,transform .1s}
+  .resetbtn:hover{transform:translateY(-1px);color:var(--sky);border-color:var(--sky)}
+  .aibtn{font-family:var(--mono);font-size:10px;letter-spacing:.5px;cursor:pointer;border:1px solid var(--line);background:var(--panel2);color:var(--muted);padding:5px 11px;border-radius:20px}
+
+  /* ── Airport capacity gauges strip ── */
+  .gauges{display:flex;gap:10px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto}
+  .gauge{flex:0 0 auto;min-width:138px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);padding:9px 11px;transition:border-color .3s,box-shadow .3s}
+  .gauge.over{border-color:var(--red);box-shadow:0 0 18px rgba(255,68,68,.3)}
+  .gauge.primary{border-color:var(--orange);box-shadow:0 0 0 1px var(--orange)}
+  .gauge.primary.over{border-color:var(--red);box-shadow:0 0 22px rgba(255,68,68,.45)}
+  .g-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  .g-code{font-weight:700;font-size:15px;letter-spacing:.5px}
+  .g-primary{font-family:var(--mono);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--orange);border:1px solid rgba(252,168,41,.5);border-radius:4px;padding:1px 4px}
+  .g-rate{font-family:var(--mono);font-size:10px;color:var(--muted)}
+  .g-bar{position:relative;height:10px;border-radius:6px;background:var(--dark);margin:8px 0 5px;overflow:hidden}
+  .g-fill{position:absolute;left:0;top:0;bottom:0;background:var(--green);border-radius:6px;transition:width .5s,background .4s}
+  .g-fill.warn{background:var(--orange)} .g-fill.over{background:var(--red)}
+  .g-nums{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted)}
+  .g-nums .dem{color:var(--sky)} .g-nums.over .dem{color:var(--red);font-weight:700}
+
+  /* ── Storm banner ── */
+  .stormbar{display:none;align-items:center;gap:10px;padding:8px 16px;background:rgba(252,168,41,.14);border-bottom:1px solid rgba(252,168,41,.4);font-size:13px;color:var(--white)}
+  .stormbar.show{display:flex;animation:flash 1s ease}
+  .stormbar .bolt{font-size:17px}
+  @keyframes flash{0%{background:rgba(252,168,41,.4)}100%{background:rgba(252,168,41,.14)}}
+
+  /* ── Platform frame + layer identity (echoes the Move·Understand·Act slide) ── */
+  .platform{flex:1;min-height:0;position:relative;margin:12px;padding:26px 12px 12px;border:2px solid var(--green);border-radius:20px;background:rgba(0,200,149,.03);box-shadow:0 0 40px rgba(0,200,149,.09);display:flex;flex-direction:column}
+  .platform-label{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--dark);padding:0 16px;font-family:var(--mono);font-size:12px;letter-spacing:1.6px;text-transform:uppercase;color:var(--green);white-space:nowrap}
+  .verb{font-family:var(--mono);font-size:9px;letter-spacing:1.5px;text-transform:uppercase;border:1px solid var(--line);border-radius:5px;padding:1px 7px;color:var(--muted)}
+  #col-agent > h2{color:var(--green)} #col-agent .verb{color:var(--green);border-color:rgba(0,200,149,.5)}
+  #col-stream > h2{color:var(--muted)}
+  #col-continuum{position:relative;overflow:visible;border-color:var(--sky);box-shadow:0 0 0 1px var(--sky),0 0 34px rgba(194,247,255,.18)}
+  #col-continuum > h2{color:var(--sky)} #col-continuum .verb{color:var(--sky);border-color:rgba(194,247,255,.5)}
+  .focus-pill{position:absolute;top:-11px;right:16px;z-index:6;background:var(--dark);border:1px solid var(--sky);color:var(--sky);font-family:var(--mono);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;padding:2px 11px;border-radius:999px}
+
+  /* ── Stage: Live Arrivals · Continuum · bridge · Agent Mesh ── */
+  .stage{flex:1;display:grid;grid-template-columns:0.8fr 1.4fr auto 1fr;gap:12px;padding:2px;min-height:0}
+
+  /* ── Live inbound arrivals firehose (col 1) — greyed; reads as volume/speed, not detail ── */
+  .txn-feed{flex:1;min-height:0;overflow:hidden;padding:4px 12px}
+  .txn{color:var(--muted);font-family:var(--mono);font-size:10.5px;line-height:1.55;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.5;animation:txnIn .35s ease}
+  @keyframes txnIn{from{opacity:0;transform:translateY(-4px)}to{opacity:.5;transform:none}}
+  .txn.primary{color:var(--orange);opacity:.95;font-weight:700;animation:txnInPrimary .35s ease}
+  @keyframes txnInPrimary{from{opacity:0;transform:translateY(-4px)}to{opacity:.95;transform:none}}
+  .col{background:var(--panel);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;min-height:0;overflow:hidden;transition:box-shadow .3s,border-color .3s}
+  .col.react{border-color:var(--sky);box-shadow:0 0 0 1px var(--sky),0 0 22px rgba(194,247,255,.25)}
+  .col > h2{margin:0;padding:10px 14px 3px;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--sky);display:flex;align-items:center;gap:8px}
+  .col .role{padding:0 14px 8px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--line)}
+  .col .body{padding:12px 14px;overflow:auto;flex:1;min-height:0}
+  .tag{font-family:var(--mono);font-size:10px;color:var(--muted);font-weight:400}
+  .empty{color:var(--muted);font-size:13px;text-align:center;padding:30px 10px;line-height:1.5}
+
+  /* Continuum primary card */
+  .primary-card{border:2px solid var(--line);border-radius:12px;padding:13px;transition:border-color .4s,box-shadow .4s}
+  .primary-card.breach{border-color:var(--red);box-shadow:0 0 26px rgba(255,68,68,.3)}
+  .hc-h{display:flex;align-items:center;gap:9px}
+  .hc-code{font-size:22px;font-weight:700}
+  .hc-name{font-size:12px;color:var(--muted)}
+  .hc-sev{margin-left:auto;font-family:var(--mono);font-size:11px;padding:3px 10px;border-radius:20px;letter-spacing:1px;background:rgba(0,200,149,.16);color:var(--green)}
+  .hc-sev.MINOR{background:rgba(252,168,41,.16);color:var(--orange)}
+  .hc-sev.MAJOR,.hc-sev.SEVERE{background:rgba(255,68,68,.2);color:var(--red)}
+  .bigstat{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+  .bs{padding:11px 12px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);text-align:center}
+  .bs-num{font-family:var(--mono);font-weight:700;line-height:1;font-size:26px;color:var(--sky)}
+  .bs.over .bs-num{color:var(--red)}
+  .bs-lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-top:6px}
+  .bs-sub{font-size:11px;color:var(--muted);margin-top:3px}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:12.5px;margin-top:12px}
+  .kv .k{color:var(--muted)} .kv .v{text-align:right;font-weight:600}
+
+  /* Alert-storm feed → collapse */
+  .alerts{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+  .alerts-h{display:flex;align-items:center;justify-content:space-between;font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+  .alerts-count{color:var(--orange);font-weight:700}
+  .alert-feed{margin-top:7px;max-height:150px;overflow:hidden}
+  .alert{font-family:var(--mono);font-size:10.5px;color:var(--muted);line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.75;animation:ain .35s ease;cursor:help}
+  .alert:hover{opacity:1;color:var(--sky)}
+  @keyframes ain{from{opacity:0;transform:translateY(-4px)}to{opacity:.75;transform:none}}
+  .collapsed-inc{display:none;margin-top:8px;padding:11px 13px;border-radius:10px;border-left:3px solid var(--green);background:rgba(0,200,149,.1)}
+  .collapsed-inc.show{display:block;animation:ain .5s ease}
+  .collapsed-inc .ci-h{font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--green)}
+  .collapsed-inc .ci-b{font-size:13px;margin-top:5px}
+
+  /* Bridge */
+  .bridge{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px}
+  .bridge-node{width:46px;height:46px;border-radius:11px;border:1px solid var(--line);background:var(--panel2);
+               display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:18px;color:var(--muted);
+               transition:border-color .3s,box-shadow .3s,color .3s}
+  .bridge-node.fire{border-color:var(--green);color:var(--green);box-shadow:0 0 22px rgba(0,200,149,.6)}
+  .bridge-node.fire .bn-glyph{animation:bfire .7s ease}
+  @keyframes bfire{0%{transform:translateX(-8px);opacity:.3}45%{transform:translateX(4px);opacity:1}100%{transform:translateX(0);opacity:1}}
+  .bridge-cap{font-family:var(--mono);font-size:8px;letter-spacing:.6px;color:var(--muted);text-transform:uppercase;text-align:center;line-height:1.3}
+  .lat{font-family:var(--mono);font-size:11px;color:var(--green);text-align:center;min-height:14px}
+
+  /* Analysis-time bar chart (trigger → analysis latency per run) */
+  .dtchart{margin:6px 14px 4px;padding:10px 11px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);display:flex;flex-direction:column;gap:9px}
+  .dtrow{display:flex;align-items:center;gap:9px}
+  .dt-lbl{font-family:var(--mono);font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);flex:0 0 112px;line-height:1.3}
+  .dt-sys{display:block;font-size:8px;color:var(--sky);opacity:.65}
+  .dt-track{flex:1;height:13px;border-radius:7px;background:rgba(0,0,0,.3);border:1px solid var(--line);overflow:hidden}
+  .dt-fill{height:100%;width:0;border-radius:7px;transition:width .5s ease}
+  .dt-fill.fast{background:var(--bright)}
+  .dt-fill.final{background:var(--green)}
+  .dt-val{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--white);flex:0 0 66px;text-align:right}
+
+  /* Agent Mesh — fast triage verdict */
+  .verdict{margin-top:4px;padding:11px 13px;border-radius:10px;text-align:center;font-weight:700;font-size:14px;letter-spacing:.5px}
+  .verdict.ESCALATE{background:rgba(255,68,68,.18);color:var(--red)}
+  .verdict.GROUP{background:rgba(252,168,41,.16);color:var(--orange)}
+  .verdict.SUPPRESS{background:rgba(0,200,149,.16);color:var(--green)}
+  .verdict .sub{display:block;font-family:var(--mono);font-size:10.5px;font-weight:400;margin-top:4px;color:var(--muted)}
+
+  /* Analysis brief */
+  .brief{margin-top:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);overflow:hidden;animation:ain .5s ease}
+  .brief-head{padding:11px 13px;border-bottom:1px solid var(--line);background:var(--deep)}
+  .brief-head .hl{font-size:15px;font-weight:700;line-height:1.3}
+  .brief-sec{padding:10px 13px;border-bottom:1px solid var(--line)}
+  .brief-sec:last-child{border-bottom:none}
+  .brief-sec .lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+  .brief-sec .txt{font-size:12.5px;line-height:1.5;color:var(--white)}
+  .opt{display:flex;gap:10px;padding:7px 0;border-bottom:1px dashed var(--line)}
+  .opt:last-child{border-bottom:none}
+  .opt-name{flex:0 0 118px;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--sky)}
+  .opt-trade{font-size:12px;color:var(--muted);line-height:1.45}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid rgba(252,168,41,.5);color:var(--orange);background:rgba(252,168,41,.08)}
+  .chip .r{color:var(--muted);margin-left:5px}
+  .prov{font-family:var(--mono);font-size:10.5px;color:var(--muted);line-height:1.6}
+  .prov span{color:var(--sky)}
+
+  /* ── TV / big-room kiosk mode (?tv=1): enlarge the signal, strip fine detail ── */
+  body.tv{font-size:16px}
+  body.tv header h1{font-size:22px}
+  body.tv header h1 .sub{font-size:14px}
+  body.tv .stormbtn{font-size:15px;padding:11px 18px}
+  body.tv .resetbtn{font-size:13px;padding:9px 14px}
+  body.tv header > a{display:none}   /* hide the text UI links; the icon nav replaces them */
+  .tvnav{display:none}
+  .tvnav-ico{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border:1px solid var(--line);border-radius:9px;color:var(--sky);text-decoration:none;font-size:20px;line-height:1}
+  .tvnav-ico:hover{border-color:var(--sky);background:rgba(194,247,255,.08)}
+  body.tv .tvnav{display:flex;gap:10px;align-items:center}
+  body.tv .tvnav-ico{width:44px;height:44px;font-size:24px}
+  body.tv .platform-label{font-size:15px}
+  body.tv .focus-pill{font-size:13px}
+  body.tv .verb,body.tv .tag{display:none}
+  body.tv .empty{font-size:18px}
+  body.tv .col > h2{font-size:22px;padding:10px 16px 8px}
+  /* Continuum — the money shot: demand vs AAR */
+  body.tv .hc-code{font-size:40px}
+  body.tv .hc-name{display:none}
+  body.tv .hc-sev{font-size:20px;font-weight:700;padding:5px 14px}
+  body.tv .bs-num{font-size:clamp(56px,6vw,80px)}
+  body.tv .bs-lbl{font-size:16px}
+  body.tv .bs-sub{font-size:14px}
+  body.tv .kv{font-size:16px}
+  body.tv .alerts{display:none}
+  /* the breach bridge */
+  body.tv .bridge-node{width:60px;height:60px;font-size:26px}
+  body.tv .bridge-cap{font-size:11px}
+  /* Agent Mesh — verdict + brief */
+  body.tv .verdict{font-size:30px;padding:14px 16px}
+  body.tv .verdict .sub{font-size:15px}
+  body.tv .brief-head .hl{font-size:28px}
+  body.tv .brief-sec .lbl{font-size:13px}
+  body.tv .brief-sec .txt{font-size:19px;line-height:1.5}
+  body.tv .opt-name{font-size:18px;flex-basis:150px}
+  body.tv .opt-trade{font-size:16px}
+  body.tv .chip{font-size:15px}
+  body.tv .opt:nth-child(n+4){display:none}        /* cap options so the brief fits */
+  body.tv .brief-sec:last-child{display:none}       /* drop provenance (last section) */
+  /* analysis-time punchline (fast vs final) */
+  body.tv .dt-lbl{font-size:13px}
+  body.tv .dt-sys{display:none}
+  body.tv .dt-val{font-size:22px}
+  /* firehose stays ambient motion (texture, not read) */
+  body.tv .txn{font-size:12px}
+  /* no scroll on a fixed TV; weight the layout toward Continuum */
+  body.tv #continuum .body,body.tv #agent .body{overflow:hidden}
+  body.tv .stage{grid-template-columns:0.55fr 1.6fr auto 1.05fr}
+</style>
+</head>
+<body>
+<header>
+  <div class="dot"></div>
+  <h1>Solace Real-Time AI Platform<span class="sub">Move · Understand · Act</span></h1>
+  <button id="stormBtn" class="stormbtn" onclick="fireStorm()" title="Swing the wind at the primary airport — runways reconfigure to a single runway, the arrival rate drops, demand exceeds it → breach → triage → analysis brief">🧭 Wind shift at <span id="primaryLbl">EWR</span></button>
+  <button id="resetBtn" class="resetbtn" onclick="fireReset()" title="Clear the live view for the next run">↺ Reset</button>
+  <div class="spacer"></div>
+  <a href="continuum-pipeline.html" target="_blank" rel="noopener" title="Inside the Continuum data plane">Continuum UI ↗</a>
+  <a id="sam-link" target="_blank" rel="noopener">Agent Mesh UI ↗</a>
+  <!-- Event Portal is Solace Cloud (external) — swap in your org's domain deep-link if you have one -->
+  <a href="https://console.solace.cloud/event-portal/designer" target="_blank" rel="noopener" title="Event Portal — the FAA Arrival Capacity domain (governance catalog)">Event Portal UI ↗</a>
+  <!-- TV-mode icon nav (upper right): jump between the views without text clutter -->
+  <nav class="tvnav" aria-label="Views">
+    <a class="tvnav-ico" href="demo.html?tv=1" title="Dashboard" aria-label="Dashboard">▦</a>
+    <a class="tvnav-ico" href="continuum-pipeline.html?tv=1" title="Continuum pipeline" aria-label="Continuum pipeline">⋔</a>
+    <a class="tvnav-ico" id="tvnav-sam" href="#" target="_blank" rel="noopener" title="Agent Mesh UI" aria-label="Agent Mesh UI">⬡</a>
+    <a class="tvnav-ico" href="https://console.solace.cloud/event-portal/designer" target="_blank" rel="noopener" title="Event Portal" aria-label="Event Portal">◎</a>
+  </nav>
+</header>
+
+<div class="platform">
+  <div class="platform-label">Solace Real-Time AI Platform</div>
+  <div class="stage">
+  <!-- LIVE ARRIVALS FIREHOSE: per-flight ETA events streaming into Continuum (greyed — reads as volume/speed) -->
+  <section class="col" id="col-stream">
+    <h2>Event Mesh <span class="verb">move</span> <span class="tag">live inbound arrivals</span></h2>
+    <div class="txn-feed" id="flight-feed"></div>
+  </section>
+
+  <!-- CONTINUUM: primary airport + the alert storm that collapses to one incident -->
+  <section class="col" id="col-continuum">
+    <h2>Continuum <span class="verb">understand</span> <span class="tag">arrival-capacity data plane</span></h2>
+    <div class="body" id="continuum">
+      <div class="empty" id="cont-empty">Press <b>🧭 Wind shift</b> to reconfigure the primary airport's runways, drop its arrival rate, and watch arrivals bunch past it.</div>
+    </div>
+  </section>
+
+  <!-- BRIDGE: the enriched breach crossing from Continuum to Agent Mesh -->
+  <div class="bridge">
+    <div class="bridge-node" id="bridge-node" title="Enriched breach event: Continuum → Agent Mesh">
+      <span class="bn-glyph">→</span>
+    </div>
+    <div class="bridge-cap">breach<br>event</div>
+  </div>
+
+  <!-- AGENT MESH: fast triage verdict, then the slow analysis brief -->
+  <section class="col" id="col-agent">
+    <h2>Agent Mesh <span class="verb">act</span> <span class="tag">Arrival Triage</span></h2>
+    <!-- Analysis time: fast triage (System 1) vs final brief (System 2), latest run. -->
+    <div class="dtchart" id="dtchart">
+      <div class="dtrow">
+        <span class="dt-lbl">fast triage<span class="dt-sys">System 1</span></span>
+        <div class="dt-track"><div class="dt-fill fast" id="dtFillFast"></div></div>
+      </div>
+      <div class="dtrow">
+        <span class="dt-lbl">deep analysis<span class="dt-sys">System 2</span></span>
+        <div class="dt-track"><div class="dt-fill final" id="dtFillFinal"></div></div>
+      </div>
+    </div>
+    <div class="body" id="agent">
+      <div class="empty" id="agent-empty">Trigger the <b>🧭 Wind shift</b>. The agent collapses the alert storm into one escalated incident and returns an analysis brief.</div>
+    </div>
+  </section>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+// TV / big-room kiosk mode is the DEFAULT (enlarged signal, fine detail stripped).
+// Opt out for the detailed desktop view with ?tv=0 (also: off / false / no).
+const _tv = new URLSearchParams(location.search).get('tv');
+if (!(_tv !== null && /^(0|off|false|no)$/i.test(_tv.trim()))) document.body.classList.add('tv');
+// Primary airport is KEWR (Newark) — a wind-sensitive hub that flips to single-runway
+// 4R when the wind swings, dropping its published rate below demand. The canned corpus
+// only generates inbound demand for these destinations (origin-only airports never breach).
+const PRIMARY = 'KEWR';
+const PRIMARY_LABEL = 'EWR';
+const FALLBACK_AIRPORTS = ['KEWR','KJFK','KLGA','KPHL','KBOS','KORD','KATL','KDCA','KIAD','KBWI','KMKG'];
+const num = v => Number(v||0).toLocaleString();
+
+// Agent Mesh (SAM) web UI runs on its own port (8800 in the local stack).
+(()=>{ const sam=(location.protocol==='https:'?`https://${location.hostname}:8443/`:`http://${location.hostname||'localhost'}:8800`); const a=$('#sam-link'); if(a) a.href = sam; const ti=$('#tvnav-sam'); if(ti) ti.href = sam; $('#primaryLbl').textContent=PRIMARY_LABEL; const sh=$('#stream-primary'); if(sh) sh.textContent=PRIMARY_LABEL; })();
+
+function reactCol(id){ const el=$('#'+id); if(!el) return; el.classList.add('react'); setTimeout(()=>el.classList.remove('react'),1200); }
+function fireBridge(){ const n=$('#bridge-node'); if(!n) return; n.classList.remove('fire'); void n.offsetWidth; n.classList.add('fire'); clearTimeout(fireBridge._t); fireBridge._t=setTimeout(()=>n.classList.remove('fire'),1400); }
+
+// ── Airport capacity gauges (published AAR vs live rolling-hour demand) ────────
+// rates: airport -> {aar, adr, runway_config}; bins: airport -> Map(bin_start -> row).
+// capacity_assessment.demand is ALREADY the rolling-60-minute arrival count (the
+// Feldera HOP window is 60 min; the 15-min slide just emits a fresh row every
+// 15 min). So the live rolling-hour demand is the MOST RECENT bin's `demand` — do
+// NOT sum bins (that would 4x-overcount). Compared against bin_capacity / AAR.
+const rates = {};
+const bins = {};
+let airports = [...FALLBACK_AIRPORTS];
+
+function ensureGauges(){
+  const host=$('#gauges'); if(!host) return;
+  host.innerHTML = airports.map(a=>`
+    <div class="gauge${a===PRIMARY?' primary':''}" id="g-${a}">
+      <div class="g-top"><span class="g-code">${a}</span>${a===PRIMARY?'<span class="g-primary">primary</span>':`<span class="g-rate" id="gr-${a}">AAR —</span>`}</div>
+      <div class="g-bar"><div class="g-fill" id="gf-${a}" style="width:0%"></div></div>
+      <div class="g-nums" id="gn-${a}"><span class="dem">— /hr</span><span>of — AAR</span></div>
+    </div>`).join('');
+  for(const a of airports) paintGauge(a);
+}
+function rollingHour(a){
+  // Peak rolling-hour bin: each bin's `demand` is already a 60-min count, so the
+  // meaningful gauge value is the busiest upcoming window, NOT the latest bin_start
+  // (the newest bin_start is the far-future tail window and holds the fewest flights).
+  const m=bins[a]; if(!m||!m.size) return {demand:0,capacity:0,exceeded:false};
+  let best=null;
+  for(const r of m.values()){
+    if(best===null || Number(r.demand||0) > Number(best.demand||0)) best=r;
+  }
+  best=best||{};
+  return {demand:Number(best.demand||0), capacity:Number(best.bin_capacity||0), exceeded:!!best.exceeded};
+}
+function paintGauge(a){
+  const g=$('#g-'+a); if(!g) return;
+  const aar = rates[a] && rates[a].aar!=null ? Number(rates[a].aar) : null;
+  const {demand,capacity,exceeded}=rollingHour(a);
+  const rate = aar || capacity || 0;
+  const over = (rate>0 && demand>rate) || exceeded;
+  const warn = rate>0 && !over && demand>=rate*0.9;
+  const pct = rate>0 ? Math.min(100, Math.round(demand/rate*100)) : 0;
+  const fill=$('#gf-'+a); if(fill){ fill.style.width=pct+'%'; fill.className='g-fill'+(over?' over':(warn?' warn':'')); }
+  const nums=$('#gn-'+a);
+  if(nums){ nums.className='g-nums'+(over?' over':''); nums.innerHTML=`<span class="dem">${demand}/hr</span><span>of ${rate||'—'} AAR</span>`; }
+  const gr=$('#gr-'+a); if(gr && aar!=null) gr.textContent='AAR '+aar;
+  g.className='gauge'+(a===PRIMARY?' primary':'')+(over?' over':'');
+}
+function onDemand(r){
+  if(!r || !r.airport) return;
+  const a=r.airport;
+  if(!airports.includes(a)){ airports.push(a); ensureGauges(); }
+  const key=r.bin_start||String(Date.now());
+  (bins[a]=bins[a]||new Map()).set(key, r);
+  const m=bins[a]; if(m.size>12){ const old=[...m.keys()].sort().slice(0,m.size-12); old.forEach(k=>m.delete(k)); }
+  paintGauge(a);
+  // TV/kiosk: keep the primary card in its live NORMAL state at rest (throttled), so when
+  // the wind shift hits the AAR drop (44 → 26) reads as a visible transition, not a cold start.
+  if(a===PRIMARY && !breachOn && document.body.classList.contains('tv')){
+    const now=Date.now(); if(now-_normalT>1500){ _normalT=now; renderPrimary(); }
+  }
+}
+
+async function loadRates(){
+  try{
+    const rows = await (await fetch('/api/faa/rates')).json();
+    if(Array.isArray(rows) && rows.length){
+      const seen=[];
+      rows.forEach(r=>{ if(r.airport){ rates[r.airport]=r; seen.push(r.airport); } });
+      // primary first, then the rest in rate order
+      airports = [PRIMARY, ...seen.filter(a=>a!==PRIMARY)];
+      ensureGauges();
+    }
+  }catch(e){ /* keep fallback airports */ }
+}
+
+// Seed live rolling-hour demand from REST on boot. The MQTT demand feed is not
+// retained, so on a fresh reload the board would otherwise stay cold until the
+// next publish (~1 replay pass). This primes gauges + bins so the hero card and
+// all gauges reflect current state immediately.
+async function loadDemand(){
+  try{
+    const rows = await (await fetch('/api/faa/demand')).json();
+    if(Array.isArray(rows)) rows.forEach(onDemand);
+  }catch(e){ /* no live demand yet — card falls back to published AAR */ }
+}
+
+// ── Continuum primary card + alert storm ─────────────────────────────────────────
+let primaryRow={}, breachOn=false, alertCount=0, collapsed=false, _normalT=0;
+let tBreach=0;   // trigger→analysis clock
+
+function renderPrimary(){
+  const r=primaryRow; $('#cont-empty') && ($('#cont-empty').style.display='none');
+  const {demand,capacity}=rollingHour(PRIMARY);
+  // Prefer the live rate-in-effect (bin_capacity, from the breach/demand event) so the
+  // tile shows the degraded AAR (44 → 26) after the wind shift; fall back to the boot rate table, then demand.
+  const aar = r.bin_capacity!=null ? Number(r.bin_capacity)
+            : (rates[PRIMARY] && rates[PRIMARY].aar!=null ? Number(rates[PRIMARY].aar) : capacity);
+  const rate = aar || capacity || 0;
+  const over = rate>0 && demand>rate;
+  const sev = (r.severity||(over?'MINOR':'NORMAL')).toUpperCase();
+  // Weather from the breach event (arrival_context): flight category, the WIND (direction
+  // + speed — a wind shift swings wx_wind_dir, which is the whole story here), visibility.
+  const windTxt = r.wx_wind_dir!=null
+      ? (r.wx_wind_dir+'° @ '+(r.wx_wind_kt!=null?r.wx_wind_kt:'?')+'kt')
+      : (r.wx_wind_kt!=null?(r.wx_wind_kt+'kt wind'):null);
+  const wx = [r.wx_flight_category, windTxt,
+              r.wx_visibility_sm!=null?(r.wx_visibility_sm+' vis'):null].filter(Boolean).join(' · ') || '—';
+  const restr = r.active_restriction_type ? (r.active_restriction_type+(r.active_restriction_reason?(' — '+r.active_restriction_reason):'')) : 'none';
+  $('#continuum').innerHTML = `
+    <div class="primary-card ${over?'breach':''}" id="primary-card">
+      <div class="hc-h">
+        <span class="hc-code">${PRIMARY}</span>
+        <span class="hc-name">${r.airport_name||'Newark Liberty Intl'}</span>
+        <span class="hc-sev ${sev}">${sev}</span>
+      </div>
+      <div class="bigstat">
+        <div class="bs ${over?'over':''}">
+          <div class="bs-num">${demand}</div><div class="bs-lbl">arrivals / hr</div>
+          <div class="bs-sub">${over?'bunched past the rate':'rolling-hour demand'}</div>
+        </div>
+        <div class="bs">
+          <div class="bs-num">${rate||'—'}</div><div class="bs-lbl">published AAR</div>
+          <div class="bs-sub">${rates[PRIMARY]&&rates[PRIMARY].runway_config?rates[PRIMARY].runway_config:'acceptance rate'}</div>
+        </div>
+      </div>
+      <div class="kv">
+        <span class="k">Overage</span><span class="v">${over?('+'+(demand-rate)+' / hr'):'—'}</span>
+        <span class="k">Weather</span><span class="v">${wx}</span>
+        <span class="k">Restriction</span><span class="v">${restr}</span>
+      </div>
+      <div class="alerts">
+        <div class="alerts-h"><span>per-bin breach alerts</span><span class="alerts-count" id="alert-count">0</span></div>
+        <div class="alert-feed" id="alert-feed"></div>
+      </div>
+    </div>`;
+  if(collapsed) showCollapsed();
+}
+function pushAlert(r){
+  const feed=$('#alert-feed'); if(!feed) return;
+  alertCount++;
+  const c=$('#alert-count'); if(c) c.textContent=alertCount;
+  const row=document.createElement('div'); row.className='alert';
+  const bin=(r.bin_start||'').slice(11,16)||'bin';
+  row.textContent=`⚠ ${r.airport} ${bin} · demand ${r.demand??'?'} > cap ${r.bin_capacity??'?'} · +${r.overage??'?'} over`;
+  row.title = JSON.stringify(r, null, 2);   // hover shows the raw breach event JSON
+  feed.insertBefore(row, feed.firstChild);
+  while(feed.children.length>30) feed.removeChild(feed.lastChild);
+}
+function showCollapsed(){
+  const inc=$('#collapsed-inc'), t=$('#collapsed-txt'); if(!inc||!t) return;
+  t.textContent = `${alertCount} per-bin alerts at ${PRIMARY} collapsed into one incident — a sustained AAR breach, not ${alertCount} separate problems.`;
+  inc.classList.add('show');
+}
+
+function onBreach(r){
+  if(!r || !r.airport) return;
+  if(r.airport!==PRIMARY){ /* non-primary breaches still count against gauges via demand */ return; }
+  breachOn=true;
+  if(!tBreach) tBreach=performance.now();
+  for(const k in r){ if(r[k]!==null && r[k]!==undefined) primaryRow[k]=r[k]; }
+  // Hovering the BREACH EVENT bridge node shows the full breach payload JSON.
+  const bn=$('#bridge-node'); if(bn) bn.title = JSON.stringify(r, null, 2);
+  renderPrimary(); reactCol('col-continuum'); fireBridge();
+  pushAlert(r);
+  showStorm(r);
+}
+// Authoritative incident state (the all-clear the old UI never had). The incident-state
+// feed publishes a real SEVERE↔CLEAR edge, so a CLEAR here means the data plane has
+// actually recovered — not merely the absence of new breach messages.
+function onIncidentState(r){
+  if(!r || r.airport!==PRIMARY) return;
+  if(r.status==='CLEAR'){
+    breachOn=false; collapsed=false;
+    primaryRow={};   // drop degraded wind-shift fields so the card recomputes to baseline AAR
+    const sb=$('#stormbar'); if(sb) sb.classList.remove('show');
+    const ci=$('#collapsed-inc'); if(ci) ci.classList.remove('show');
+    renderPrimary();
+  } else if(r.status==='SEVERE'){
+    breachOn=true;
+  }
+}
+function showStorm(r){
+  const bar=$('#stormbar'), txt=$('#stormbar-txt'); if(!bar||!txt) return;
+  const aar = rates[PRIMARY] && rates[PRIMARY].aar!=null ? rates[PRIMARY].aar : (r.bin_capacity!=null?r.bin_capacity:'—');
+  const wdir = r.wx_wind_dir!=null ? r.wx_wind_dir+'°' : 'NE';
+  txt.innerHTML = `Wind shifted at <b>${PRIMARY}</b> (SW → ${wdir}) — runways reconfigured to single-runway 4R, AAR dropped to <b>${aar}/hr</b> and arrivals are bunching. Demand now exceeds the published rate → <b>capacity breach</b>.`;
+  bar.classList.add('show');
+}
+
+// ── Agent Mesh: fast triage verdict → slow analysis brief ─────────────────────
+function renderTriage(a){
+  if(!agentOn || !a) return;
+  if(a.agent_output) a=a.agent_output;
+  const v=String(a.verdict||a.action||a.decision||'').toUpperCase();
+  const vc = v.includes('ESCALATE')?'ESCALATE':v.includes('GROUP')?'GROUP':v.includes('SUPPRESS')?'SUPPRESS':'';
+  if(!vc) return;
+  $('#agent-empty') && ($('#agent-empty').style.display='none');
+  reactCol('col-agent');
+  // Fast triage (System 1) latency — measured from the breach; final still pending.
+  if(tBreach){ lastFast=Math.max(1,Math.round(performance.now()-tBreach)); paintDtimes(); }
+  const conf=a.confidence!=null?(Math.round(Number(a.confidence)*100)+'%'):null;
+  const reason=a.reason||a.rationale||'';
+  // Fast triage collapses the alert storm into the single incident
+  if(vc==='ESCALATE'||vc==='GROUP'){ collapsed=true; showCollapsed(); }
+  let brief=$('#agent').querySelector('.brief');
+  $('#agent').innerHTML =
+    `<div class="verdict ${vc}">FAST TRIAGE · ${vc}<span class="sub">${reason||'interim verdict'}${conf?(' · '+conf+' confidence'):''}</span></div>`
+    + (brief?brief.outerHTML:'');
+}
+function renderDecision(a){
+  if(!agentOn || !a) return;
+  if(a.agent_output) a=a.agent_output;
+  $('#agent-empty') && ($('#agent-empty').style.display='none');
+  reactCol('col-agent');
+  if(tBreach){ lastFinal=Math.max(1,Math.round(performance.now()-tBreach)); paintDtimes(); tBreach=0; }
+
+  // The System-2 content lives in the nested `brief` object (the Lead Briefer output);
+  // the top-level fields are the fast-triage metadata + generic rationale. Read the
+  // brief, falling back to top-level for a non-escalated (brief-null) verdict.
+  const b = (a.brief && typeof a.brief === 'object') ? a.brief : a;
+  const headline = b.headline || a.headline || a.title || `Arrival-capacity analysis · ${a.airport||PRIMARY}`;
+  const what = b.whats_happening || b.what_is_happening || a.what_is_happening || a.what || a.summary || '';
+  const why  = b.why || a.why || a.rationale || a.reason || '';
+  const options = Array.isArray(b.options) ? b.options : (Array.isArray(a.options) ? a.options : []);
+  const downstream = Array.isArray(b.downstream_airports_at_risk) ? b.downstream_airports_at_risk
+                   : Array.isArray(a.downstream_airports) ? a.downstream_airports
+                   : Array.isArray(a.downstream) ? a.downstream : [];
+  const provenance = b.provenance || a.provenance;
+
+  const optHtml = options.map(o=>{
+    const name = o.name || o.option || o.action || o.measure || o.recommendation || '—';
+    const trade = o.tradeoff || o.trade_off || o.detail || o.description || '';
+    return `<div class="opt"><div class="opt-name">${esc(name)}</div><div class="opt-trade">${esc(trade)}</div></div>`;
+  }).join('') || '<div class="opt-trade">GDP · miles-in-trail · reroute · wait — no options returned</div>';
+
+  const dsHtml = downstream.map(d=>{
+    if(typeof d==='string') return `<span class="chip">${esc(d)}</span>`;
+    const ap=d.airport||d.code||'—'; const risk=d.risk||d.reason||d.detail||'';
+    return `<span class="chip">${esc(ap)}${risk?('<span class="r">'+esc(risk)+'</span>'):''}</span>`;
+  }).join('') || '<span class="tag">none flagged</span>';
+
+  let provHtml='';
+  if(Array.isArray(provenance)) provHtml = provenance.map(p=>`<div>• <span>${esc(typeof p==='string'?p:(p.source||p.view||JSON.stringify(p)))}</span></div>`).join('');
+  else if(provenance && typeof provenance==='object') provHtml = Object.entries(provenance).map(([k,v])=>`<div>${esc(k)}: <span>${esc(String(v))}</span></div>`).join('');
+  else if(provenance) provHtml = `<div><span>${esc(String(provenance))}</span></div>`;
+  else provHtml = `<div>capacity_assessment · arrival_context · mcp_airport_rate · mcp_weather · mcp_downstream_risk</div>`;
+
+  const verdictEl = $('#agent').querySelector('.verdict');
+  const briefHtml = `
+    <div class="brief">
+      <div class="brief-head"><div class="hl">${esc(headline)}</div></div>
+      ${what?`<div class="brief-sec"><div class="lbl">What's happening</div><div class="txt">${esc(what)}</div></div>`:''}
+      ${why?`<div class="brief-sec"><div class="lbl">Why</div><div class="txt">${esc(why)}</div></div>`:''}
+      <div class="brief-sec"><div class="lbl">Options &amp; trade-offs</div>${optHtml}</div>
+      <div class="brief-sec"><div class="lbl">Downstream airports at risk</div><div class="chips">${dsHtml}</div></div>
+      <div class="brief-sec"><div class="lbl">Provenance</div><div class="prov">${provHtml}</div></div>
+    </div>`;
+  $('#agent').innerHTML = (verdictEl?verdictEl.outerHTML:'') + briefHtml;
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// ── Analysis time: two bars — fast triage (System 1) vs final brief (System 2) ──
+// Both measured from the breach (tBreach). The fast bar is scaled against the final
+// so the ~sub-second triage reads as a sliver next to the multi-second brief.
+function fmtMs(ms){ return ms<1500 ? ('⚡ '+ms+' ms') : ('⚡ '+(ms/1000).toFixed(1)+' s'); }
+let lastFast=0, lastFinal=0;
+function paintDtimes(){
+  const ff=$('#dtFillFast'), fv=$('#dtValFast'), lf=$('#dtFillFinal'), lv=$('#dtValFinal');
+  const max=Math.max(lastFinal, lastFast, 1);
+  if(fv) fv.textContent = lastFast  ? fmtMs(lastFast).replace('⚡ ','')  : '—';
+  if(lv) lv.textContent = lastFinal ? fmtMs(lastFinal).replace('⚡ ','') : '—';
+  if(ff) ff.style.width = lastFast  ? Math.max(3, lastFast/max*100)+'%'  : '0';
+  if(lf) lf.style.width = lastFinal ? Math.max(3, lastFinal/max*100)+'%' : '0';
+}
+
+// ── Live inbound arrivals firehose (per-flight ETA events) ─────────────────────
+// Topic TTP/flightData/{gufi}/{arrival}/{eta_source}, payload {gufi,arrival,eta,eta_source}.
+// Greyed scrolling ticker that reads as live volume; rows arriving at the primary
+// airport (KEWR/EWR) are highlighted so the wind-shift burst visibly surges here.
+let flightFeedEl=null;
+function relEta(eta){
+  if(eta==null||eta==='') return '—';
+  let t=Date.parse(eta);
+  if(isNaN(t)){ const n=Number(eta); if(!isNaN(n)) t = n<1e12 ? n*1000 : n; }
+  if(isNaN(t)){ const s=String(eta); return s.slice(11,16)||s; }
+  const dm=Math.round((t-Date.now())/60000);
+  return (dm>=0?'+':'')+dm+'m';
+}
+function pushFlight(p){
+  if(!p) return;
+  if(!flightFeedEl) flightFeedEl=$('#flight-feed'); if(!flightFeedEl) return;
+  const arr=String(p.arrival||'???').toUpperCase();
+  const src=String(p.eta_source||'').toLowerCase();
+  const isPrimary = arr===PRIMARY || arr===PRIMARY_LABEL || arr==='EWR' || arr==='KEWR';
+  const row=document.createElement('div'); row.className='txn'+(isPrimary?' primary':'');
+  row.textContent=`→ ${arr}  ETA ${relEta(p.eta)} · ${src||'eta'}`;
+  flightFeedEl.insertBefore(row, flightFeedEl.firstChild);
+  while(flightFeedEl.children.length>40) flightFeedEl.removeChild(flightFeedEl.lastChild);
+}
+
+// Synthetic volume: the inbound-arrivals ticker reads as live VOLUME (not an
+// authoritative list), so keep it busy with a steady stream of plausible arrivals
+// between the real feed events — the firehose always looks like a lot is coming in.
+const _FEED_SRC=['ttpfd','tbfm','filed'];
+function synthFlight(){
+  const ap=FALLBACK_AIRPORTS[Math.floor(Math.random()*FALLBACK_AIRPORTS.length)];
+  const mins=4+Math.floor(Math.random()*52);                 // 4–56 min out
+  return {arrival:ap, eta:Date.now()+mins*60000, eta_source:_FEED_SRC[Math.floor(Math.random()*_FEED_SRC.length)]};
+}
+(function feedPump(){
+  pushFlight(synthFlight());
+  setTimeout(feedPump, 120+Math.floor(Math.random()*230));   // ~3–8 rows/sec, organic cadence
+})();
+
+// ── MQTT over WebSocket (browser → Solace via the API proxy) ───────────────────
+// Browser MQTT uses + / # wildcards (the SMF * / > rule applies to SAM agents, not
+// this client). Subscribe to all four arrival-capacity topics.
+let mqttUp=false;
+function setConn(){ const c=$('#conn'); if(c) c.textContent = mqttUp ? 'live · MQTT' : 'connecting…'; }
+function flattenSink(buf){
+  const txt=buf.toString(); const out=[];
+  const take=o=>{ if(o&&typeof o==='object'){ if('insert' in o){ if(o.insert) out.push(o.insert); } else if('delete' in o){} else out.push(o); } };
+  let parsed; try{ parsed=JSON.parse(txt); }catch{ parsed=undefined; }
+  if(parsed===undefined){ for(const line of txt.split('\n')){ const s=line.trim(); if(!s) continue; try{ take(JSON.parse(s)); }catch{} } }
+  else if(Array.isArray(parsed)) parsed.forEach(take);
+  else take(parsed);
+  return out;
+}
+
+const _wsUrl=`${location.protocol==='https:'?'wss':'ws'}://${location.host}/fx/mqtt`;
+const mqttClient=mqtt.connect(_wsUrl,{
+  clientId:'faa-'+Math.random().toString(16).slice(2,8),
+  username:'default', password:'default', clean:true, reconnectPeriod:3000, connectTimeout:8000,
+});
+const TOPICS=[
+  'TTP/flightData/#',
+  'fl/faa/arrival-capacity/demand/+',
+  'fl/faa/arrival-capacity/incident-state/+',
+  'fl/faa/arrival-capacity/breach/+',
+  'solutions/arrival-capacity/decision/+',
+  'solutions/arrival-capacity/triage',
+];
+mqttClient.on('connect', ()=>{ mqttUp=true; setConn(); TOPICS.forEach(t=>mqttClient.subscribe(t,{qos:0})); });
+mqttClient.on('reconnect', ()=>{ mqttUp=false; setConn(); });
+mqttClient.on('close',     ()=>{ mqttUp=false; setConn(); });
+mqttClient.on('error',     ()=>{ mqttUp=false; setConn(); });
+mqttClient.on('message', (topic, message)=>{
+  try{
+    if(topic.startsWith('TTP/flightData/')){ flattenSink(message).forEach(pushFlight); }
+    else if(topic.startsWith('fl/faa/arrival-capacity/demand/')){ flattenSink(message).forEach(onDemand); }
+    else if(topic.startsWith('fl/faa/arrival-capacity/incident-state/')){ flattenSink(message).forEach(onIncidentState); }
+    else if(topic.startsWith('fl/faa/arrival-capacity/breach/')){ flattenSink(message).forEach(onBreach); }
+    else if(topic==='solutions/arrival-capacity/triage'){ flattenSink(message).forEach(renderTriage); }
+    else if(topic.startsWith('solutions/arrival-capacity/decision/')){ const ap=topic.split('/').pop(); flattenSink(message).forEach(d=>{ if(d&&typeof d==='object'&&(d.airport==null||typeof d.airport!=='string'||d.airport[0]==='{')) d.airport=ap; renderDecision(d); }); }
+  }catch(err){ console.warn(err); }
+});
+setConn();
+
+// ── Agentic analysis: ALWAYS ON (no toggle) ───────────────────────────────────
+// The SAM triage agent is always enabled; the UI renders every triage + analysis.
+const agentOn=true;
+// Ensure the backend agent-state is on too (best-effort, fire-and-forget).
+fetch('/api/faa/agent-state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:true})}).catch(()=>{});
+
+// ── Scenario buttons ──────────────────────────────────────────────────────────
+async function fireStorm(){
+  const btn=$('#stormBtn'); if(!btn||btn.disabled) return;
+  const label=btn.innerHTML; btn.disabled=true; btn.textContent='triggering…';
+  try{
+    const r=await fetch('/api/faa/scenario/start?airport='+encodeURIComponent(PRIMARY),{method:'POST'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    btn.textContent='✓ wind shift underway';
+  }catch(e){ btn.textContent='✗ failed'; }
+  setTimeout(()=>{ btn.innerHTML=label; btn.disabled=false; },1800);
+}
+async function fireReset(){
+  // Clear the live view …
+  primaryRow={}; breachOn=false; alertCount=0; collapsed=false; tBreach=0;
+  lastFast=0; lastFinal=0; paintDtimes();
+  $('#continuum').innerHTML='<div class="empty" id="cont-empty">Press <b>🧭 Wind shift</b> to reconfigure the primary airport\'s runways, drop its arrival rate, and watch arrivals bunch past it.</div>';
+  $('#agent').innerHTML='<div class="empty" id="agent-empty">Trigger the <b>🧭 Wind shift</b>. The agent collapses the alert storm into one escalated incident and returns an analysis brief.</div>';
+  const bn=$('#bridge-node'); if(bn) bn.title='Enriched breach event: Continuum → Agent Mesh';
+  // … and recover the data plane so the primary airport goes green and can breach again.
+  const btn=$('#resetBtn'); const label=btn?btn.innerHTML:'';
+  if(btn){ btn.disabled=true; btn.textContent='resetting…'; }
+  if(bins[PRIMARY]) bins[PRIMARY].clear();
+  try{
+    // The API blocks until the Continuum incident-state feed confirms the primary is
+    // CLEAR, so green:true is a CONFIRMED recovery — not the old optimistic guess that
+    // flipped the button green on HTTP 200. On timeout the API returns green:false.
+    const r=await fetch('/api/faa/scenario/reset?airport='+encodeURIComponent(PRIMARY),{method:'POST'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const j=await r.json().catch(()=>({}));
+    // Re-sync the card to the recovered baseline AAR/demand (rates/bins are boot-seeded).
+    // The incident-state CLEAR edge (onIncidentState) also re-renders the card green.
+    await loadRates(); await loadDemand();
+    if(!breachOn) renderPrimary();
+    if(btn) btn.textContent = j.green ? '✓ green' : 'still clearing…';
+  }catch(e){ if(btn) btn.textContent='✗ failed'; }
+  setTimeout(()=>{ if(btn){ btn.innerHTML=label; btn.disabled=false; } },1600);
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+ensureGauges();
+(async ()=>{
+  await loadRates();     // published AAR per airport (gauges + primary tile)
+  await loadDemand();    // live rolling-hour demand so the board isn't cold on reload
+  // Lead with the hero (KEWR) card at rest, before any wind shift — so the default
+  // kiosk view always shows the primary airport instead of a "press 🧭" prompt.
+  if(!breachOn && document.body.classList.contains('tv')) renderPrimary();
+})();
+</script>
+</body>
+</html>

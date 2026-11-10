@@ -1,0 +1,27 @@
+name: downstream_risk
+kind: derived
+description: >-
+  Cascade/downstream exposure: every airport that is breaching its arrival rate
+  right now (demand over capacity), for assessing how a restriction at one airport
+  ripples across the system. An MCP tool view inside the base pipeline; it is not
+  republished as a broker stream and cannot be a source of a new data product
+  directly. preview_query can still read it.
+relation: mcp_downstream_risk
+base_pipeline: arrival-capacity
+topic_subscriptions: []
+topic_pattern: null
+columns:
+  - {name: airport, type: VARCHAR, description: ICAO airport identifier (key)}
+  - {name: bin_start, type: TIMESTAMP, description: Start of the breaching bin (key)}
+  - {name: demand, type: BIGINT}
+  - {name: bin_capacity, type: INTEGER, description: AAR in effect for the bin}
+  - {name: overage, type: BIGINT}
+key_columns: [airport, bin_start]
+event_time_column: bin_start
+changelog: full
+ingestable: false
+volatile_columns: [demand, overage]
+hint: >-
+  Not ingestable: 'mcp_downstream_risk' is a tool view inside the base pipeline, not
+  a broker stream. Use the derived 'capacity_assessment' as a product source
+  instead; preview_query can still read mcp_downstream_risk directly.

@@ -1,0 +1,42 @@
+kind: connector
+name: event-mesh-publish
+description: "Outbound Solace publish (fire-and-forget) onto the same Event Mesh the stack already runs. The arrival-capacity workflow calls its publish_triage tool from a tool node the moment the fast decision node answers — emitting an interim fast-triage verdict BEFORE the slow System-2 brief finishes — so the UI can show the verdict immediately instead of waiting for the merged decision. One workflow, one entrypoint; this is just a side publish mid-run."
+spec:
+  type: event_mesh
+  subtype: solace
+  values:
+    # Same broker the entrypoint and Continuum use, in the compose network.
+    broker_url: "${EVENT_MESH_SOLACE_BROKER_URL, tcp://solace:55555}"
+    broker_vpn: "${EVENT_MESH_SOLACE_BROKER_VPN, default}"
+    broker_username: "${EVENT_MESH_SOLACE_BROKER_USERNAME, default}"
+    broker_password: "${EVENT_MESH_SOLACE_BROKER_PASSWORD, default}"
+    operations:
+      - tool_name: publish_triage
+        tool_description: "Publish the fast-triage arrival-capacity verdict to the Event Mesh (fire-and-forget) before the slow brief completes. Call once per breach right after the decision node."
+        # STATIC topic (no dynamic key). A workflow TOOL node's connector invocation
+        # does not see user_data.forward_context (that belongs to the gateway output
+        # handler, not the workflow), so a {airport} level would render "missing
+        # required input property". The airport identity rides in the `event` payload
+        # field instead (the echoed trigger JSON contains airport); the UI subscribes to
+        # this exact topic and reads it there.
+        topic: "solutions/arrival-capacity/triage"
+        wait_for_response: false
+        payload_format: json
+        qos: 0
+        input_schema:
+          type: object
+          properties:
+            # Payload fields — the fast verdict, mapped from the decision node by the tool node.
+            stage:            { type: string, description: "triage (interim) vs final", x-solace-payload-path: stage }
+            action:           { type: string, description: "ESCALATE / GROUP / SUPPRESS", x-solace-payload-path: action }
+            will_materialize: { type: string, description: "YES_LIKELY / UNCERTAIN / UNLIKELY", x-solace-payload-path: will_materialize }
+            impact:           { type: string, description: "SEVERE / MODERATE / MINOR", x-solace-payload-path: impact }
+            case_priority:    { type: string, description: "HIGH / MEDIUM / LOW", x-solace-payload-path: case_priority }
+            # Numbers (the decision node emits e.g. 1 / 0.53) — must be typed number,
+            # not string, or the tool-node call fails "expected string, got number".
+            confidence:       { type: number, description: "action confidence", x-solace-payload-path: confidence }
+            decided_by:       { type: string, description: "who produced this verdict", x-solace-payload-path: decided_by }
+            # The raw trigger JSON (carries airport etc.) — lets a consumer recover
+            # identity even on the static-topic fallback.
+            event:            { type: string, description: "the raw trigger event JSON", x-solace-payload-path: event }
+          required: [action]

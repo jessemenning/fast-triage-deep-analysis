@@ -1,0 +1,17 @@
+kind: model
+name: wind_decider
+description: "Structured-decision model (native OpenAI-Decisions wire format) served by the MaaS LiteLLM proxy at /v1/decisions — the wind-arrival-risk decision node references this by alias. provider: openai + modelType: decision are required together (SAM's native decision client; LiteLLM now speaks the same wire format). The node POSTs to <apiBase>/v1/decisions. Needs the workflow_decision_node feature flag (SAM_FEATURE_WORKFLOW_DECISION_NODE=true) on the CLI and the runtime."
+spec:
+  alias: wind_decider
+  provider: "openai"
+  modelType: decision
+  # Routed straight through the MaaS LiteLLM proxy, which now serves the native
+  # OpenAI-Decisions format at /v1/decisions — so no translator is needed (the old
+  # in-stack decision-proxy -> OpenRouter hop is retired). apiBase + api_key reuse the
+  # platform LLM endpoint/key. modelName is microsoft-decision-1 — the only model wired
+  # to /v1/decisions on this proxy. SAM posts to <apiBase with trailing /v1 trimmed>/v1/decisions.
+  modelName: "microsoft-decision-1"
+  apiBase: "${LLM_SERVICE_ENDPOINT}/v1"
+  authConfig:
+    type: apikey
+    api_key: "${LLM_SERVICE_API_KEY}"

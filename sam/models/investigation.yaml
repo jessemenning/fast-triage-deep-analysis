@@ -1,0 +1,17 @@
+kind: model
+name: investigation
+description: "Dedicated 'investigation' model slot for the fast/slow investigation (System 2) — the Lead Investigator synthesis runs on this (the two specialists use the fast `general` slot). Sonnet-class: the slow path runs rarely (SUSPICIOUS breaches only), so synthesis + tool/JSON reliability matter far more than latency or cost. Isolated from the `general` pool so a slow investigation cannot starve the fast path (shared rate-limit bucket -> 429 -> null case)."
+spec:
+  alias: investigation
+  provider: "openai"
+  # Prefer an explicit Sonnet deployment (LLM_SERVICE_INVESTIGATION_MODEL_NAME);
+  # unset -> falls back to the planning model (also Sonnet). TWO levels only: the
+  # ${VAR, default} substitution expands a default just one level deep (see
+  # models/planning.yaml), and a THREE-level nest (…, ${…, ${…}}}) mis-matches the
+  # braces and leaks a stray `}` into the model name (verified: produced an invalid
+  # "claude-sonnet-5-vertex}"). The planning slot is Sonnet and effectively always
+  # set, so one fallback level is enough.
+  modelName: "openai/${LLM_SERVICE_INVESTIGATION_MODEL_NAME, ${LLM_SERVICE_PLANNING_MODEL_NAME}}"
+  apiBase: "${LLM_SERVICE_ENDPOINT}"
+  authConfig:
+    apiKey: "${LLM_SERVICE_API_KEY}"

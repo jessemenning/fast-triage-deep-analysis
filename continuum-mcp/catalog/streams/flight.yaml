@@ -1,0 +1,31 @@
+name: flight
+kind: derived
+description: >-
+  One keyed row per in-bound ACTIVE flight with its arrival airport (from the
+  flight plan), best-available ETA and the ETA source quality (TTPFD/TBFM preferred,
+  else filed). Built inside the base pipeline by joining the FDPS flight-plan and
+  TTPFD ETA feeds, so it is NOT republished as a single broker stream and cannot be
+  a source of a new data product directly. preview_query can still read it.
+relation: flight
+base_pipeline: arrival-capacity
+topic_subscriptions: []
+topic_pattern: null
+columns:
+  - {name: gufi, type: VARCHAR, description: Globally-unique flight identifier (key)}
+  - {name: flight_id, type: VARCHAR}
+  - {name: status, type: VARCHAR, description: Flight status (ACTIVE while tracked)}
+  - {name: arr_airport, type: VARCHAR, description: Arrival airport (ICAO)}
+  - {name: dep_airport, type: VARCHAR, description: Departure airport (ICAO)}
+  - {name: eta, type: TIMESTAMP, description: Best-available estimated time of arrival}
+  - {name: eta_source, type: VARCHAR, description: "ETA source/quality (TTPFD, TBFM, FILED, ...)"}
+  - {name: updated_ts, type: TIMESTAMP, description: Last update time}
+key_columns: [gufi]
+event_time_column: updated_ts
+changelog: full
+ingestable: false
+volatile_columns: [eta, updated_ts]
+hint: >-
+  Not ingestable: 'flight' is composed inside the base pipeline from two broker
+  feeds (FDPS flight plan + TTPFD ETA) and is not republished as one stream. Build
+  products on the derived 'capacity_assessment' (demand vs rate) or 'arrival_context'
+  (enriched breach) instead; preview_query can still read flight directly.

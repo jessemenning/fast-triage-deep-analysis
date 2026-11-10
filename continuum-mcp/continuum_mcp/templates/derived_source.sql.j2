@@ -1,0 +1,27 @@
+{% if part == "ddl" %}
+CREATE TABLE {{ raw_table }} (
+{% for col in stream.columns %}
+    {{ col.name }} {{ col.type }}{{ "," if (not loop.last) or with_broker_ts }}
+{% endfor %}
+{% if with_broker_ts %}
+    broker_ts TIMESTAMP DEFAULT CAST(CONNECTOR_METADATA()['broker_ts'] AS TIMESTAMP)
+{% endif %}
+)
+{% elif stream.changelog == "full" %}
+-- '{{ stream.relation }}' mirrors the base pipeline's view: the live topic carries its full
+-- changelog (inserts and deletes) and the engine applies both to the table above.
+CREATE VIEW {{ stream.relation }} AS
+SELECT {{ column_names | join(', ') }} FROM {{ raw_table }};
+{% else %}
+-- '{{ stream.relation }}' receives inserts only (the base sink skips deletes): keep the
+-- latest event per key, ordered by broker receive time.
+CREATE VIEW {{ stream.relation }} AS
+SELECT {{ column_names | join(', ') }}
+FROM (
+    SELECT *,
+        ROW_NUMBER() OVER (
+            PARTITION BY {{ stream.key_columns | join(', ') }}
+            ORDER BY broker_ts DESC) AS rn
+    FROM {{ raw_table }}
+) WHERE rn = 1;
+{% endif %}

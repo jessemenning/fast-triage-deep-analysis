@@ -1,0 +1,53 @@
+name: airport_rate
+kind: raw
+description: >-
+  Published arrival/departure rates (AAR/ADR) and runway configuration per
+  airport, from TTP Airport Information. This is the VERSIONED side input: every
+  event is a new rate version for an airport, valid from its effective time until
+  the next version. The rate in effect for a bin is reconstructed in SQL with a
+  LEAD window — no database.
+relation: airport_rate
+base_pipeline: arrival-capacity
+topic_subscriptions:
+  - TTP/airportInfo/>
+topic_pattern: TTP/airportInfo/{airport}
+include_topic: true
+include_broker_timestamp: true
+ddl: |
+  CREATE TABLE airport_rate_raw (
+      data         VARCHAR,
+      solace_topic VARCHAR   DEFAULT CAST(CONNECTOR_METADATA()['solace_topic'] AS VARCHAR),
+      airport      VARCHAR   DEFAULT CAST(CONNECTOR_METADATA()['airport'] AS VARCHAR),
+      broker_ts    TIMESTAMP DEFAULT CAST(CONNECTOR_METADATA()['broker_ts'] AS TIMESTAMP)
+  )
+decode_sql: |
+  CREATE VIEW airport_rate_events AS
+  SELECT
+      airport,
+      CAST(PARSE_JSON(data)['aar']            AS INTEGER)   AS aar,
+      CAST(PARSE_JSON(data)['adr']            AS INTEGER)   AS adr,
+      CAST(PARSE_JSON(data)['runway_config']  AS VARCHAR)   AS runway_config,
+      CAST(PARSE_JSON(data)['effective_time'] AS TIMESTAMP) AS valid_from
+  FROM airport_rate_raw
+  WHERE airport IS NOT NULL;
+
+  LATENESS airport_rate_events.valid_from INTERVAL '2' HOUR;
+
+  CREATE MATERIALIZED VIEW airport_rate AS
+  SELECT
+      airport, aar, adr, runway_config, valid_from,
+      LEAD(valid_from) OVER (PARTITION BY airport ORDER BY valid_from) AS valid_to
+  FROM airport_rate_events;
+columns:
+  - {name: airport, type: VARCHAR, description: ICAO airport identifier (key)}
+  - {name: aar, type: INTEGER, description: Published arrival rate (arrivals/hour)}
+  - {name: adr, type: INTEGER, description: Published departure rate (departures/hour)}
+  - {name: runway_config, type: VARCHAR, description: Active runway configuration}
+  - {name: valid_from, type: TIMESTAMP, description: Effective time of this rate version (event time)}
+  - {name: valid_to, type: TIMESTAMP, description: Effective time of the next version (NULL = still in effect)}
+key_columns: [airport, valid_from]
+event_time_column: valid_from
+changelog: full
+append_only: true  # each rate version is a new insert over the mesh
+ingestable: true
+volatile_columns: [valid_to]

@@ -1,0 +1,25 @@
+# DEFAULT overlay: persist Feldera's compile cache + cargo deps + pipeline metadata
+# across restarts, so a `down`/`up` no longer recompiles everything cold. The Makefile
+# applies this overlay by default (COMPOSE), so `make up` is warm; `make up-ephemeral`
+# runs without it for a true cold / ephemeral engine (CI).
+#
+#   make up            # warm (this overlay on)
+#   make up-ephemeral  # cold (overlay off)
+#
+# Named volumes initialize from the image's existing contents on first use (so the
+# image's prebuilt ~/.cargo is preserved), then persist across restarts:
+#   • /home/ubuntu/.cargo    — cargo registry + built dependency artifacts
+#   • /home/ubuntu/.feldera  — compiled pipeline binaries + the pipeline-manager metadata DB
+#
+# Trade-off: the engine is no longer ephemeral — compiled pipelines and their metadata
+# survive restarts, so identical SQL is a cache hit (seconds) instead of a cold compile
+# (minutes). `make clean` (down -v) still wipes these volumes for a true cold start.
+services:
+  feldera:
+    volumes:
+      - feldera_home:/home/ubuntu/.feldera
+      - feldera_cargo:/home/ubuntu/.cargo
+
+volumes:
+  feldera_home:
+  feldera_cargo:

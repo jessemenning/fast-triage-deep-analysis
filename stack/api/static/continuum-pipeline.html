@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Inside Continuum — Pipeline Lineage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Space+Mono&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+  :root{
+    --dark:#03213B; --deep:#093B5F; --panel:#0b2e4d; --panel2:#0e3357;
+    --green:#00C895; --bright:#ABFF88; --orange:#FCA829; --red:#FF4444;
+    --sky:#C2F7FF; --white:#fff; --muted:#7fa6c4; --line:rgba(194,247,255,.12);
+    --mono:'Space Mono',monospace; --sans:'Figtree',system-ui,sans-serif;
+    --databricks:#FF3621;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--dark);color:var(--white);font-family:var(--sans);font-size:14px}
+  body{display:flex;flex-direction:column;overflow:hidden}
+  a{color:var(--sky)}
+
+  header{display:flex;align-items:center;gap:14px;padding:9px 20px;border-bottom:1px solid var(--line);background:var(--deep)}
+  header .dot{width:11px;height:11px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);animation:pulse 2s infinite}
+  header h1{font-size:15px;margin:0;font-weight:700;letter-spacing:.3px}
+  header h1 .sub{font-weight:400;font-size:.72em;color:var(--muted);margin-left:6px}
+  header .spacer{flex:1}
+  header a.nav{color:var(--sky);font-size:12px;text-decoration:none;border:1px solid var(--line);padding:5px 10px;border-radius:6px}
+  header a.nav:hover{border-color:var(--sky);background:rgba(194,247,255,.08)}
+  header .conn{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* control bar */
+  .controls{display:flex;align-items:center;gap:10px;padding:8px 20px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .controls .lbl{font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+  select,.btn{font-family:var(--sans);font-size:12px;cursor:pointer;border:1px solid var(--line);border-radius:20px;padding:7px 13px;background:var(--panel2);color:var(--sky);transition:background .2s,transform .1s,border-color .2s}
+  select{color:var(--white)}
+  .btn:hover{transform:translateY(-1px);border-color:var(--sky);background:rgba(194,247,255,.08)}
+  .btn.primary{background:var(--green);color:var(--dark);border:none;font-weight:700;box-shadow:0 0 12px rgba(0,200,149,.35)}
+  .btn.ghost{background:transparent;color:var(--muted)}
+  .btn:disabled{opacity:.5;cursor:default;transform:none}
+
+  /* stage grid — 3 panes (ingress ▶ pipeline ▶ emit) + 2 arrows */
+  .stage{flex:1;display:grid;grid-template-columns:1fr;gap:0;padding:16px 20px 8px;overflow:hidden;min-height:0}
+  .col{background:var(--panel);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+  .col h2{margin:0;padding:11px 14px;font-size:12.5px;font-weight:700;letter-spacing:.3px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+  .col h2 .n{font-family:var(--mono);font-size:10px;color:var(--dark);background:var(--sky);border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-weight:700}
+  .col .body{padding:12px 14px;flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px}
+  .cap{font-family:var(--mono);font-size:9.5px;line-height:1.5;color:var(--muted)}
+  .cap b{color:var(--sky);font-weight:400}
+  .sql{font-family:var(--mono);font-size:9.5px;line-height:1.45;color:var(--bright);background:rgba(0,0,0,.28);border-left:2px solid var(--green);border-radius:4px;padding:7px 9px;white-space:pre-wrap;word-break:break-word}
+
+
+  /* trin: node reveal entrance (also used by the staged reveal) */
+  @keyframes trin{from{opacity:0;transform:translateY(-7px)}to{opacity:1;transform:none}}
+
+  /* ── pipeline lineage DAG ── */
+  .dag-wrap{flex:1;min-height:0;overflow:auto;border-radius:8px;background:rgba(0,0,0,.18);border:1px solid var(--line)}
+  .dag-inner{position:relative;padding:14px 10px 18px}
+  .dag-row{position:relative;display:flex;justify-content:center;align-items:stretch;gap:12px;margin:0 0 30px;flex-wrap:wrap;z-index:2}
+  .dag-row.cluster{gap:8px;margin-bottom:26px}
+  svg.edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;overflow:visible}
+  svg.edges path{fill:none;stroke:var(--green);stroke-width:1.6;opacity:.5;
+    stroke-dasharray:4 5;animation:flow 1.1s linear infinite}
+  svg.edges path.side{stroke:var(--sky);stroke-width:1.5;opacity:.5}
+  svg.edges path.fired{opacity:.95;stroke-width:2.4;filter:drop-shadow(0 0 4px var(--green))}
+  @keyframes flow{to{stroke-dashoffset:-18}}
+
+  .node{position:relative;min-width:104px;max-width:150px;background:var(--panel2);border:1px solid var(--line);
+    border-left:3px solid var(--muted);border-radius:7px;padding:6px 9px 7px;display:flex;flex-direction:column;gap:2px;
+    cursor:help;transition:box-shadow .3s,border-color .3s,background .3s}
+  .node:hover{border-color:var(--sky)}
+  .node .nm{font-family:var(--mono);font-size:9.5px;color:var(--white);font-weight:700;line-height:1.25;word-break:break-word}
+  .node .kd{font-family:var(--mono);font-size:7.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted)}
+  /* kind accents (left border) */
+  .node.k-ingest{border-left-color:var(--sky)} .node.k-ingest .mv{color:var(--sky)}
+  .node.k-mv{border-left-color:var(--green)}   .node.k-mv .mv{color:var(--green)}
+  .node.k-sink{border-left-color:var(--orange)}.node.k-sink .mv{color:var(--orange)}
+  .node.k-view{border-left-color:var(--green)}   /* transient views shown as materialized views */
+  /* created data products (session-only, appended on create) */
+  .node.k-product{border-left-color:var(--bright);border-style:dashed}
+  .node.k-product .nm{color:var(--bright)}
+  .node.k-producttrigger{border-left-color:var(--orange);border-style:dashed}
+  .node.k-ref{border-left-color:var(--muted);opacity:.85}
+  .node.dim{opacity:.72}
+  .node.spinenode{box-shadow:inset 0 0 0 1px rgba(0,200,149,.18)}
+  /* flash: a sharp dark→bright→dark spike per message, so even a high-rate feed
+     reads as a distinct pulse (restarts from dark on every arrival) */
+  .node.flash{animation:flash .45s ease-out}
+  /* every stop must have the SAME number of shadow layers or box-shadow won't interpolate */
+  @keyframes flash{
+    0%,100%{box-shadow:0 0 0 1px rgba(0,200,149,0),0 0 14px rgba(0,200,149,0),inset 0 0 0 40px rgba(0,200,149,0)}
+    26%{box-shadow:0 0 0 1px var(--green),0 0 14px rgba(0,200,149,.45),inset 0 0 0 40px rgba(0,200,149,.2)}}
+  .node .topic{font-family:var(--mono);font-size:7.5px;color:var(--orange);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* Solace source-stream chips (graphical feed → ingest connection) */
+  .node.k-stream{border-left-color:var(--bright);background:rgba(171,255,136,.07);cursor:default}
+  .node.k-stream .nm{color:var(--bright)}
+  .node .solace{font-family:var(--mono);font-size:7px;letter-spacing:.6px;text-transform:uppercase;color:var(--green)}
+  /* staged reveal */
+  .node.hidden{display:none}
+  .node.reveal{animation:trin .35s ease-out}
+  .stepper{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-family:var(--mono);font-size:10px;color:var(--muted)}
+  .stepper .sbtn{cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:3px 10px;background:var(--panel2);color:var(--sky);font-family:var(--mono);font-size:11px;line-height:1;transition:border-color .2s,background .2s}
+  .stepper .sbtn:hover:not(:disabled){border-color:var(--sky);background:rgba(194,247,255,.08)}
+  .stepper .sbtn:disabled{opacity:.4;cursor:default}
+  .stepper .slabel{color:var(--white)} .stepper .slabel b{color:var(--green)}
+  .stepper .scap{flex-basis:100%;color:var(--muted);font-size:9px;line-height:1.4}
+  .dag-legend{display:flex;gap:12px;flex-wrap:wrap;font-family:var(--mono);font-size:8.5px;color:var(--muted);padding-top:2px}
+  .dag-legend span{display:inline-flex;align-items:center;gap:4px}
+  .dag-legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+  .dag-err{font-family:var(--mono);font-size:10px;color:var(--orange);padding:4px 2px}
+  /* SQL-on-hover tooltip for pipeline nodes */
+  .sqltip{position:fixed;z-index:60;max-width:500px;max-height:74vh;overflow:auto;background:#04192c;
+    border:1px solid var(--green);border-radius:8px;box-shadow:0 12px 34px rgba(0,0,0,.6);pointer-events:none;display:none}
+  .sqltip .tip-h{font-family:var(--mono);font-size:9px;color:var(--sky);padding:6px 11px;border-bottom:1px solid var(--line);
+    position:sticky;top:0;background:#04192c;letter-spacing:.3px}
+  .sqltip .tip-h b{color:var(--green);font-weight:700}
+  .sqltip .tip-b{font-family:var(--mono);font-size:9px;line-height:1.55;color:var(--bright);
+    white-space:pre-wrap;word-break:break-word;padding:9px 11px;margin:0}
+
+  /* add-data-product modal */
+  .dp-overlay{position:fixed;inset:0;z-index:70;display:none;align-items:center;justify-content:center;background:rgba(3,15,27,.72)}
+  .dp-modal{width:min(640px,94vw);max-height:90vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.6);display:flex;flex-direction:column}
+  .dp-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);font-weight:700;font-size:14px}
+  .dp-x{cursor:pointer;background:none;border:none;color:var(--muted);font-size:16px}
+  .dp-x:hover{color:var(--sky)}
+  .dp-body{padding:14px 16px;display:flex;flex-direction:column;gap:9px}
+  .dp-l{display:flex;flex-direction:column;gap:3px;font-family:var(--mono);font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}
+  .dp-l input,.dp-l textarea,.dp-l select{font-family:var(--mono);font-size:11px;color:var(--white);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;text-transform:none;letter-spacing:0}
+  .dp-l textarea{resize:vertical;line-height:1.5;color:var(--bright)}
+  .dp-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .dp-sub{font-family:var(--mono);font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:var(--sky);border-top:1px solid var(--line);padding-top:8px;margin-top:2px}
+  .dp-foot{display:flex;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid var(--line)}
+  .dp-status{font-family:var(--mono);font-size:10px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dp-status.ok{color:var(--green)} .dp-status.err{color:var(--red)} .dp-status.work{color:var(--orange)}
+  .dp-intro{margin:0 0 4px;font-size:12.5px;line-height:1.55;color:var(--muted)}
+  .dp-intro b{color:var(--white);font-weight:700}
+  body.tv .dp-intro{font-size:15px}
+  .dp-pdesc{font-size:12px;line-height:1.5;color:var(--muted);border-left:2px solid var(--line);padding-left:8px;margin:-3px 0 2px}
+  .dp-pdesc:empty{display:none}
+  body.tv .dp-pdesc{font-size:14px}
+
+
+  /* (ingress firehose + reference-table styles removed with pane 1) */
+
+  /* click-to-open SQL panel (works in both modes; the TV path since hover is gone) */
+  #sqlBody{font-size:13px;line-height:1.45;margin:0;max-height:76vh;overflow:auto}
+
+  /* ── TV / big-room kiosk mode (?tv=1): enlarge node names + live motion, strip fine detail ── */
+  body.tv header h1{font-size:22px}
+  body.tv header h1 .sub{font-size:13px}
+  body.tv header .dot{width:16px;height:16px}
+  body.tv #conn{font-size:16px}
+  body.tv header a.nav{display:none}
+  body.tv .controls .lbl{font-size:13px}
+  body.tv #dpBtn{font-size:16px;padding:9px 14px}
+  body.tv .col h2{font-size:22px}
+  body.tv .cap{font-size:14px}
+  /* the live pipeline: big readable node names, thick animated edges; click a node for its SQL */
+  body.tv .node{cursor:pointer}
+  body.tv .node .nm{font-size:16px}
+  body.tv .node .kd,body.tv .node .topic,body.tv .node .solace{display:none}
+  body.tv svg.edges path{stroke-width:3.5}
+  body.tv svg.edges path.fired{stroke-width:5.5}
+  /* the stage narrative = a headline */
+  body.tv .stepper .slabel{font-size:22px}
+  body.tv .stepper .slabel b{font-size:24px}
+  body.tv .stepper .scap{font-size:16px}
+  body.tv .stepper .sbtn{font-size:18px;padding:6px 12px}
+  /* hover tooltip + fine print are dead on a TV — SQL opens as a click panel instead */
+  body.tv .sqltip{display:none!important}
+  body.tv .dag-legend{display:none}
+  /* TV-mode icon nav (upper right) — jump between the views */
+  .tvnav{display:none}
+  .tvnav-ico{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border:1px solid var(--line);border-radius:9px;color:var(--sky);text-decoration:none;font-size:20px;line-height:1}
+  .tvnav-ico:hover{border-color:var(--sky);background:rgba(194,247,255,.08)}
+  body.tv .tvnav{display:flex;gap:10px;align-items:center}
+  body.tv .tvnav-ico{width:44px;height:44px;font-size:24px}
+  /* SQL panel + create-product modal: legible, simplified */
+  body.tv #sqlBody{font-size:18px;line-height:1.5}
+  body.tv .dp-head{font-size:20px}
+  body.tv .dp-modal{width:min(880px,94vw)}
+  body.tv .dp-l{font-size:13px}
+  body.tv .dp-l input,body.tv .dp-l textarea,body.tv .dp-l select{font-size:16px;padding:10px 12px}
+  body.tv .btn{font-size:16px;padding:10px 16px}
+  body.tv .dp-status{font-size:13px}
+  body.tv .dp-adv{display:none}   /* simplified create on TV: Preset · Name · SQL · Create */
+</style>
+</head>
+<body>
+
+<header>
+  <div class="dot"></div>
+  <h1>Inside Continuum <span class="sub">pipeline lineage &amp; fire rates</span></h1>
+  <div class="spacer"></div>
+  <button class="btn" id="dpBtn" onclick="openDP()" title="Author a new Continuum data product via the generation engine">+ Data product</button>
+  <a class="nav" href="continuum.html">◀ Internals</a>
+  <a class="nav" href="demo.html">← Hero demo</a>
+  <!-- TV-mode icon nav (upper right): jump between the views without text clutter -->
+  <nav class="tvnav" aria-label="Views">
+    <a class="tvnav-ico" href="demo.html?tv=1" title="Dashboard" aria-label="Dashboard">▦</a>
+    <a class="tvnav-ico" href="continuum-pipeline.html?tv=1" title="Continuum pipeline" aria-label="Continuum pipeline">⋔</a>
+    <a class="tvnav-ico" id="tvnav-sam" href="#" target="_blank" rel="noopener" title="Agent Mesh UI" aria-label="Agent Mesh UI">⬡</a>
+    <a class="tvnav-ico" href="https://console.solace.cloud/event-portal/designer" target="_blank" rel="noopener" title="Event Portal" aria-label="Event Portal">◎</a>
+  </nav>
+</header>
+
+<div class="stage">
+  <!-- PIPELINE — the materialized-view lineage -->
+  <section class="col">
+    <div class="body">
+      <div class="stepper" id="stepper"></div>
+      <div class="dag-wrap"><div class="dag-inner" id="dag">
+        <svg class="edges" id="edges"></svg>
+      </div></div>
+      <div class="dag-legend">
+        <span><i style="background:var(--sky)"></i>ingest table</span>
+        <span><i style="background:var(--green)"></i>materialized view</span>
+        <span><i style="background:var(--orange)"></i>sink → Solace</span>
+        <span><i style="background:var(--bright)"></i>data product (created)</span>
+        <span style="color:var(--sky)">hover a node for its SQL</span>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="sqltip" id="sqltip"></div>
+<!-- click-to-open SQL panel (TV-legible; hover tooltip is for desktop only) -->
+<div class="dp-overlay" id="sqlOverlay" onclick="if(event.target===this)closeSql()">
+  <div class="dp-modal" style="width:min(900px,94vw)">
+    <div class="dp-head"><b id="sqlTitle">SQL</b><span style="flex:1"></span><span class="cap" id="sqlSrc"></span><button class="dp-x" onclick="closeSql()" title="Close">✕</button></div>
+    <pre class="sql" id="sqlBody"></pre>
+  </div>
+</div>
+
+<div class="dp-overlay" id="dpOverlay">
+  <div class="dp-modal">
+    <div class="dp-head"><span>+ Data product</span><span style="flex:1"></span><span class="cap">generation engine · Continuum</span><button class="dp-x" onclick="closeDP()" title="Close">✕</button></div>
+    <div class="dp-body">
+      <p class="dp-intro">A <b>data product</b> is a new live view over the streaming air-traffic data — Continuum builds it on the fly and keeps it continuously up to date as events arrive, with no pipeline restart. Optionally attach a <b>trigger</b> that publishes an event whenever a condition you set becomes true (for example, demand exceeding an airport's capacity). Pick a preset to prefill everything below, then Create.</p>
+      <label class="dp-l">Preset<select id="dpPreset"></select></label>
+      <div class="dp-pdesc" id="dpPresetDesc"></div>
+      <label class="dp-l">Name<input id="dpName" placeholder="my-product"></label>
+      <label class="dp-l dp-adv">Description<input id="dpDesc"></label>
+      <label class="dp-l">SQL — a single SELECT over source streams<textarea id="dpSql" rows="5"></textarea></label>
+      <div class="dp-row dp-adv">
+        <label class="dp-l">Source streams (comma)<input id="dpStreams" placeholder="capacity_assessment, weather"></label>
+        <label class="dp-l">Key columns (comma)<input id="dpKeys" placeholder="airport, bin_start"></label>
+      </div>
+      <label class="dp-l dp-adv">Event-time column<input id="dpEtc" placeholder="bin_start"></label>
+      <div class="dp-sub dp-adv">Trigger (optional) — fire an event on a condition</div>
+      <div class="dp-row dp-adv">
+        <label class="dp-l">Trigger name<input id="dpTname"></label>
+        <label class="dp-l">Output topic<input id="dpTopic" placeholder="fl/cp/&lt;slug&gt;/&lt;trigger&gt;/{airport}"></label>
+      </div>
+      <label class="dp-l dp-adv">Condition (SQL bool)<input id="dpCond" placeholder="demand >= bin_capacity"></label>
+      <label class="dp-l dp-adv">Payload columns (comma)<input id="dpPayload"></label>
+    </div>
+    <div class="dp-foot">
+      <div class="dp-status" id="dpStatus">prefilled from a prewarmed product — Create is a cache hit (seconds)</div>
+      <button class="btn ghost" onclick="closeDP()">Cancel</button>
+      <button class="btn primary" id="dpCreate" onclick="createDP()">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const fmtArr = v => Math.round(Number(v||0));
+
+// (airport focus, add-arrivals and the Emit pane were removed — this page is now just the
+//  Continuum pipeline lineage + the "add data product" authoring flow.)
+
+// ════════════════════════════════════════════════════════════════════════════
+//  PIPELINE LINEAGE DAG  (the merged pane 2)
+//  Nodes = the tables/views in stack/config/feldera/faa_program.sql; edges = the
+//  FROM/JOIN dependencies. Live "fire rate" per node comes from Feldera, browser-side:
+//   • ingest tables  → /stats inputs .total_records        (records ingested, rec/s)
+//   • sink views     → /stats outputs .transmitted_records (rows emitted to Solace, emit/s)
+//   • materialized   → ad-hoc COUNT(*) (one batched UNION ALL query) → rows + Δ
+//   • plain views    → not materialized (no state to count) → pulse when a parent fires
+//  CORS is open on the engine for this origin, so no backend proxy is needed.
+// ════════════════════════════════════════════════════════════════════════════
+const FELDERA = `${location.protocol}//${location.hostname}:8081`;
+const PIPE = 'arrival-capacity';
+const POLL_MS = 2000;
+
+// row = vertical layer (top→bottom); kind drives styling + which metric applies.
+// spine=true marks the main demand→incident→emit path (drawn as the bold green thread).
+// label = short plain-English name shown on the box; id = the real faa_program.sql
+// object (kept for the SQL-on-hover tooltip, stats/COUNT, and the change stream).
+const NODES = [
+  // §0 Solace source streams — the real SWIM feeds, drawn flowing into each ingest table
+  {id:'src_flightplan', label:'Flight plan feed', kind:'stream', row:-1, stage:0, mqtt:'FDPS/flightPlan/#', topic:'FDPS/flightPlan', feeds:'faa_ingest_flightplan_raw'},
+  {id:'src_eta',        label:'ETA feed',         kind:'stream', row:-1, stage:0, mqtt:'TTP/flightData/#',  topic:'TTP/flightData',  feeds:'faa_ingest_eta_raw'},
+  {id:'src_rate',       label:'Rate feed',        kind:'stream', row:-1, stage:0, mqtt:'TTP/airportInfo/#', topic:'TTP/airportInfo', feeds:'faa_ingest_rate_raw'},
+  {id:'src_metar',      label:'Weather feed',     kind:'stream', row:-1, stage:0, mqtt:'aviation/metar/#',  topic:'aviation/metar',  feeds:'faa_ingest_metar_raw'},
+  {id:'src_tmr',        label:'Restriction feed', kind:'stream', row:-1, stage:0, mqtt:'TTP/restriction/#', topic:'TTP/restriction', feeds:'faa_ingest_tmr_raw'},
+  // §1 ingest
+  {id:'faa_ingest_flightplan_raw', label:'Flight plans', kind:'ingest', row:0, stage:1, spine:true},
+  {id:'faa_ingest_eta_raw',        label:'ETAs',         kind:'ingest', row:0, stage:1, spine:true},
+  {id:'faa_ingest_rate_raw',       label:'Airport rates',kind:'ingest', row:0, stage:1},
+  {id:'faa_ingest_metar_raw',      label:'Weather obs',  kind:'ingest', row:0, stage:1},
+  {id:'faa_ingest_tmr_raw',        label:'Restrictions', kind:'ingest', row:0, stage:1},
+  // §2 dedup (plain views) + §4/§5/§9 first-order derives
+  {id:'flightplan_latest', label:'Latest flight plan', kind:'view', row:1, stage:2, spine:true},
+  {id:'eta_latest',        label:'Latest ETA',         kind:'view', row:1, stage:2, spine:true},
+  {id:'airport_rate',      label:'Rate in effect',     kind:'mv',   row:1, stage:2},
+  {id:'metar_latest',      label:'Latest weather',     kind:'mv',   row:1, stage:2},
+  {id:'active_restriction',label:'Active restriction', kind:'mv',   row:1, stage:2},
+  // §5 flight
+  {id:'flight', label:'Inbound flights', kind:'mv', row:2, stage:3, spine:true},
+  // §6 demand (the old "Rolling window" pane)
+  {id:'arrival_demand', label:'Arrival demand', kind:'mv', row:3, stage:3, spine:true},
+  // §7 assessment
+  {id:'capacity_assessment', label:'Demand vs capacity', kind:'mv', row:4, stage:4, spine:true},
+  // §8 breach edge-detect (the old "Trigger" pane)
+  {id:'capacity_breach_events', label:'Capacity breaches', kind:'mv', row:5, stage:4, spine:true},
+  // §10 + §11 terminal read/feed branch
+  {id:'fl_arrival_demand_sink', label:'Demand feed out', kind:'sink', row:6, stage:6},
+  {id:'mcp_arrival_demand',     label:'Demand (brief)',       kind:'mv', row:6, stage:6, dim:true},
+  {id:'mcp_downstream_risk',    label:'Downstream risk',      kind:'mv', row:6, stage:6, dim:true},
+  {id:'mcp_airport_rate',       label:'Rate (brief)',         kind:'mv', row:6, stage:6, dim:true},
+  {id:'mcp_weather',            label:'Weather (brief)',      kind:'mv', row:6, stage:6, dim:true},
+  {id:'mcp_active_restrictions',label:'Restrictions (brief)', kind:'mv', row:6, stage:6, dim:true},
+  // §3 static ref
+  {id:'airports', label:'Airport list', kind:'ref', row:7, stage:5},
+  // §9 enrich
+  {id:'arrival_context', label:'Breach + context', kind:'mv', row:8, stage:5, spine:true},
+  // §9 collapse + §10 breach sink
+  {id:'arrival_incident', label:'Airport incident', kind:'mv', row:9, stage:5, spine:true, note:'one per airport'},
+  {id:'fl_arrival_breach_sink', label:'Breach feed out', kind:'sink', row:9, stage:6},
+  // §10 incident sink → the SAM escalation trigger
+  {id:'fl_arrival_incident_sink', label:'Incident → SAM', kind:'sink', row:10, stage:6, spine:true},
+];
+const EDGES = [
+  // §0 Solace streams → ingest tables (the graphical feed connection)
+  ['src_flightplan','faa_ingest_flightplan_raw'],
+  ['src_eta','faa_ingest_eta_raw'],
+  ['src_rate','faa_ingest_rate_raw'],
+  ['src_metar','faa_ingest_metar_raw'],
+  ['src_tmr','faa_ingest_tmr_raw'],
+  ['faa_ingest_flightplan_raw','flightplan_latest'],
+  ['faa_ingest_eta_raw','eta_latest'],
+  ['faa_ingest_rate_raw','airport_rate'],
+  ['faa_ingest_metar_raw','metar_latest'],
+  ['faa_ingest_tmr_raw','active_restriction'],
+  ['flightplan_latest','flight'],
+  ['eta_latest','flight'],
+  ['flight','arrival_demand'],
+  ['arrival_demand','capacity_assessment'],
+  ['airport_rate','capacity_assessment'],
+  ['capacity_assessment','capacity_breach_events'],
+  ['capacity_assessment','fl_arrival_demand_sink'],
+  ['capacity_assessment','mcp_arrival_demand'],
+  ['capacity_assessment','mcp_downstream_risk'],
+  ['airport_rate','mcp_airport_rate'],
+  ['metar_latest','mcp_weather'],
+  ['active_restriction','mcp_active_restrictions'],
+  ['capacity_breach_events','arrival_context'],
+  ['airports','arrival_context'],
+  ['metar_latest','arrival_context'],
+  ['active_restriction','arrival_context'],
+  ['arrival_context','arrival_incident'],
+  ['arrival_context','fl_arrival_breach_sink'],
+  ['arrival_incident','fl_arrival_incident_sink'],
+];
+const NODE = Object.fromEntries(NODES.map(n=>[n.id,n]));
+const CHILDREN = {}; const PARENTS = {};
+EDGES.forEach(([a,b])=>{ (CHILDREN[a]=CHILDREN[a]||[]).push(b); (PARENTS[b]=PARENTS[b]||[]).push(a); });
+const MV_IDS = NODES.filter(n=>n.kind==='mv').map(n=>n.id);   // the views we can COUNT()
+
+// ── Staged reveal (manual stepper) — build the pipeline up one stage at a time ──
+const STAGES = [
+  {t:'Solace streams',          d:'Live air-traffic feeds — flights, arrival rates, weather, restrictions — stream in over Solace'},
+  {t:'Ingest',                  d:'Each raw feed message lands in Feldera as it arrives'},
+  {t:'Normalize & side-inputs', d:'Keep only the latest update per flight, and track each airport\'s current arrival rate, weather, and restrictions'},
+  {t:'Flight & demand',         d:'Continuously count how many planes are due to land at each airport over the coming hour, updated the instant any flight or ETA changes'},
+  {t:'Assess & detect',         d:'Compare each airport\'s expected arrivals to how many it can actually land, and flag a problem only when demand stays over the limit'},
+  {t:'Enrich & collapse',       d:'Add airport, weather, and restriction details, then fold the flood of alerts into one incident per airport'},
+  {t:'Emit & read models',      d:'Send that incident to the AI agents, and publish live views for the dashboard'},
+];
+const MAX_STAGE = STAGES.length - 1;
+let shownStage = 0;   // start calm: only the Solace source chips are visible
+function renderStepper(){
+  const el=$('#stepper'); if(!el) return;
+  el.innerHTML =
+    `<button class="sbtn" id="stReset" title="Back to the start">⟲</button>`+
+    `<button class="sbtn" id="stPrev" title="Previous stage">◀</button>`+
+    `<span class="slabel">Stage <b>${shownStage+1}</b>/${STAGES.length} — ${STAGES[shownStage].t}</span>`+
+    `<button class="sbtn" id="stNext" title="Next stage">▶</button>`+
+    `<span class="scap">${STAGES[shownStage].d}</span>`;
+  $('#stReset').disabled = shownStage===0;
+  $('#stPrev').disabled  = shownStage===0;
+  $('#stNext').disabled  = shownStage===MAX_STAGE;
+  $('#stReset').onclick = ()=>revealTo(0);
+  $('#stPrev').onclick  = ()=>revealTo(shownStage-1);
+  $('#stNext').onclick  = ()=>revealTo(shownStage+1);
+}
+function revealTo(s){
+  s=Math.max(0, Math.min(MAX_STAGE, s));
+  const advancing = s>shownStage;
+  shownStage=s;
+  NODES.forEach(n=>{
+    const el=document.getElementById('nd-'+n.id); if(!el) return;
+    const show=n.stage<=shownStage, wasHidden=el.classList.contains('hidden');
+    el.classList.toggle('hidden', !show);
+    if(show && wasHidden){
+      el.classList.remove('reveal'); void el.offsetWidth; el.classList.add('reveal');
+      // drop .reveal once the entrance finishes — it also sets `animation`, which would
+      // otherwise permanently shadow the .flash animation (equal specificity, later rule).
+      clearTimeout(el._rvt); el._rvt=setTimeout(()=>el.classList.remove('reveal'), 450);
+    }
+  });
+  renderStepper();
+  layoutEdges();
+  if(advancing){   // scroll the deepest just-revealed node into view
+    const inStage=NODES.filter(n=>n.stage===shownStage);
+    const last=inStage.length ? document.getElementById('nd-'+inStage[inStage.length-1].id) : null;
+    if(last) last.scrollIntoView({block:'nearest', behavior:'smooth'});
+  }
+}
+
+// ── SQL on hover: pull the LIVE program SQL from the engine, split per object ──
+// program_code is the exact SQL deployed in Feldera, so the tooltip never drifts from
+// what's actually running. Split by each CREATE … <name>, slice to that statement's ';'.
+let SQLDEFS={}, SQLSRC={};   // id -> SQL text ; id -> source label (for the tooltip header)
+let _sqlLoaded=false, _sqlLoading=null, _sqlOpenId=null;
+function parseDefs(code){
+  // Match MATERIALIZED VIEW, LOCAL VIEW (the §2 dedup views), plain VIEW, and TABLE.
+  // Missing LOCAL VIEW here silently dropped eta_latest / flightplan_latest from the tooltips.
+  const re=/CREATE\s+(?:MATERIALIZED\s+VIEW|LOCAL\s+VIEW|VIEW|TABLE)\s+("?)([A-Za-z_][A-Za-z0-9_]*)\1/gi;
+  const marks=[]; let m; while((m=re.exec(code))) marks.push({name:m[2].toLowerCase(), idx:m.index});
+  const defs={};
+  for(let i=0;i<marks.length;i++){
+    const end = i+1<marks.length ? marks[i+1].idx : code.length;
+    let seg = code.slice(marks[i].idx, end);
+    const semi = seg.lastIndexOf(';'); if(semi>=0) seg = seg.slice(0, semi+1);
+    defs[marks[i].name] = seg.trim();
+  }
+  return defs;
+}
+// Fetch the live program SQL once; returns true on success. On failure it leaves
+// _sqlLoaded false so ensureSql() can retry — a load-time race with a cold engine
+// no longer sticks the tooltips on 'unavailable' forever.
+async function loadProgramSql(){
+  try{
+    const r = await fetch(`${FELDERA}/v0/pipelines/${PIPE}`,{cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d = await r.json();
+    const defs = parseDefs(d.program_code||'');
+    if(!Object.keys(defs).length) throw new Error('empty program');
+    SQLDEFS = defs; _sqlLoaded = true; return true;
+  }catch(e){ return false; }
+}
+// Idempotent, dedup'd loader: resolves immediately once loaded, otherwise joins the
+// in-flight fetch (or starts one). Safe to call from every hover/click.
+function ensureSql(){
+  if(_sqlLoaded) return Promise.resolve(true);
+  if(!_sqlLoading) _sqlLoading = loadProgramSql().finally(()=>{ _sqlLoading=null; });
+  return _sqlLoading;
+}
+function showTip(id, el){
+  const tip=$('#sqltip'); const sql=SQLDEFS[id];
+  const nd=NODE[id]; const title=(nd && (nd.kind==='product'||nd.kind==='producttrigger')) ? nd.label : id;
+  tip.innerHTML = `<div class="tip-h"><b>${title}</b> · ${SQLSRC[id]||'faa_program.sql'}</div><div class="tip-b"></div>`;
+  const body = tip.querySelector('.tip-b');
+  if(sql){ body.textContent = sql; }
+  else if(!_sqlLoaded){
+    body.textContent = 'loading SQL…';
+    // Engine may still be warming up; fetch, then refresh this tip if the pointer is still on it.
+    ensureSql().then(()=>{ if($('#sqltip').style.display==='block' && NODE[id]) showTip(id, el); });
+  }
+  else { body.textContent = 'no SQL for this node'; }
+  tip.style.display='block';
+  const r=el.getBoundingClientRect(), tw=tip.offsetWidth, th=tip.offsetHeight, pad=8;
+  let x=r.right+12; if(x+tw>innerWidth-pad) x=r.left-tw-12; if(x<pad) x=pad;
+  let y=r.top; if(y+th>innerHeight-pad) y=innerHeight-pad-th; if(y<pad) y=pad;
+  tip.style.left=x+'px'; tip.style.top=y+'px';
+}
+function hideTip(){ $('#sqltip').style.display='none'; }
+
+// ── Build the DAG DOM once ──
+function buildDag(){
+  const dag=$('#dag');
+  const rows={};
+  NODES.forEach(n=>{ (rows[n.row]=rows[n.row]||[]).push(n); });
+  Object.keys(rows).map(Number).sort((a,b)=>a-b).forEach(r=>{
+    const isCluster = rows[r].every(n=>n.dim) && rows[r].length>2;
+    const rowEl=document.createElement('div'); rowEl.className='dag-row'+(isCluster?' cluster':'');
+    rows[r].forEach(n=>{
+      const el=document.createElement('div');
+      el.className='node k-'+n.kind+(n.spine?' spinenode':'')+(n.dim?' dim':'');
+      el.id='nd-'+n.id;
+      if(n.stage>shownStage) el.classList.add('hidden');   // staged reveal
+      if(n.kind==='stream'){
+        el.innerHTML = `<div class="nm">${n.label}</div><div class="solace">◖ ${n.topic||'live SWIM feed'}</div>`;
+      }else{
+        const kindLbl = n.kind==='ingest'?'ingest table':n.kind==='sink'?'sink → solace':n.kind==='ref'?'static ref':'materialized view';
+        el.innerHTML =
+          `<div class="nm" title="${n.id}">${n.label}</div>`+
+          `<div class="kd">${kindLbl}${n.note?' · '+n.note:''}</div>`+
+          (n.topic?`<div class="topic">${n.topic}</div>`:'');
+        el.addEventListener('mouseenter', ()=>showTip(n.id, el));
+        el.addEventListener('mouseleave', hideTip);
+        el.addEventListener('click', ()=>openSql(n.id));
+      }
+      rowEl.appendChild(el);
+    });
+    dag.appendChild(rowEl);
+  });
+  layoutEdges();
+}
+
+// ── Draw edges from measured node positions ──
+// Rows are position:relative (for z-index), so a node's offsetParent is its row, not
+// .dag-inner. Measure with getBoundingClientRect relative to .dag-inner instead — the
+// svg is inset:0 inside .dag-inner, so that rect IS the svg's coordinate origin.
+let _innerRect=null;
+function anchor(id){
+  const el=document.getElementById('nd-'+id); if(!el||!_innerRect) return null;
+  const r=el.getBoundingClientRect();
+  return {cx:r.left-_innerRect.left+r.width/2, top:r.top-_innerRect.top, bot:r.top-_innerRect.top+r.height};
+}
+function layoutEdges(){
+  const svg=$('#edges'); const inner=$('#dag');
+  _innerRect=inner.getBoundingClientRect();
+  svg.setAttribute('width', inner.scrollWidth); svg.setAttribute('height', inner.scrollHeight);
+  svg.setAttribute('viewBox', `0 0 ${inner.scrollWidth} ${inner.scrollHeight}`);
+  // keep the <svg> element, drop old paths
+  [...svg.querySelectorAll('path')].forEach(p=>p.remove());
+  EDGES.forEach(([a,b])=>{
+    if(NODE[a].stage>shownStage || NODE[b].stage>shownStage) return;   // only edges between revealed stages
+    const p1=anchor(a), p2=anchor(b); if(!p1||!p2) return;
+    const x1=p1.cx, y1=p1.bot, x2=p2.cx, y2=p2.top;
+    const k=Math.max(22,(y2-y1)*0.42);
+    const d=`M ${x1} ${y1} C ${x1} ${y1+k} ${x2} ${y2-k} ${x2} ${y2}`;
+    const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+    const spine = NODE[a].spine && NODE[b].spine;
+    path.setAttribute('d',d); path.setAttribute('class', spine?'':'side');
+    path.dataset.src=a;
+    svg.appendChild(path);
+  });
+}
+window.addEventListener('resize', ()=>{ clearTimeout(window._rz); window._rz=setTimeout(layoutEdges,120); });
+
+// ── Flash a box: a quick green pulse, re-triggered on every message arrival ──
+const _flashT={};
+function flashNode(id){
+  const now=Date.now(); if(now-(_flashT[id]||0) < 120) return; _flashT[id]=now;   // avoid thrash at very high rates
+  const el=document.getElementById('nd-'+id); if(!el) return;
+  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');   // restart the animation
+}
+
+// ── Poll Feldera for per-node metrics, compute Δ/s, pulse on fire ──
+const prev = {};   // id -> {v, t}
+async function fetchStats(){
+  const r=await fetch(`${FELDERA}/v0/pipelines/${PIPE}/stats`,{cache:'no-store'});
+  if(!r.ok) throw new Error('stats '+r.status);
+  const d=await r.json(); const m={};
+  (d.inputs||[]).forEach(i=>{ m[i.config.stream]={v:i.metrics.total_records}; });
+  (d.outputs||[]).forEach(o=>{ m[o.config.stream]={v:o.metrics.transmitted_records}; });
+  return m;
+}
+async function fetchCounts(){
+  const sql = MV_IDS.map(v=>`SELECT '${v}' AS view, COUNT(*) AS n FROM ${v}`).join(' UNION ALL ');
+  const u = `${FELDERA}/v0/pipelines/${PIPE}/query?sql=${encodeURIComponent(sql)}&format=json`;
+  const r=await fetch(u,{cache:'no-store'}); if(!r.ok) throw new Error('query '+r.status);
+  const txt=await r.text(); const m={};
+  txt.split('\n').map(s=>s.trim()).filter(Boolean).forEach(line=>{ try{ const o=JSON.parse(line); m[o.view]={v:Number(o.n)}; }catch{} });
+  return m;
+}
+function setStatus(ok,msg){ const el=$('#dagStatus'); if(!el) return; el.textContent=msg; el.style.color= ok?'var(--green)':'var(--orange)'; }
+
+async function pollPipeline(){
+  let stats, counts;
+  try{ [stats,counts] = await Promise.all([fetchStats(), fetchCounts()]); }
+  catch(e){ setStatus(false,'engine unreachable ('+e.message+')'); return; }
+  const now=performance.now();
+  const live = Object.assign({}, counts, stats);   // stats (ingest/sink) authoritative
+  const fired = new Set();
+
+  // Counts aren't displayed — we poll only to detect that a node PROCESSED something
+  // (its stats/COUNT rose since the last poll) and flash it. Ingest, sink and stream
+  // boxes also flash in real time from MQTT (pulseStream / the sink handler below).
+  NODES.forEach(n=>{
+    if(n.kind==='stream'||n.kind==='view'||n.kind==='ref') return;   // no stats/COUNT for these
+    const cur = live[n.id]; if(!cur) return;
+    const v = cur.v, p = prev[n.id];
+    if(p && v>p.v){ fired.add(n.id); flashNode(n.id); }
+    prev[n.id]={v, t:now};
+  });
+  // transient views flash when a parent processed something this poll
+  NODES.filter(n=>n.kind==='view').forEach(n=>{
+    if((PARENTS[n.id]||[]).some(p=>fired.has(p))){ fired.add(n.id); flashNode(n.id); }
+  });
+
+  // pulse edges whose source fired
+  $('#edges').querySelectorAll('path').forEach(path=>{
+    if(fired.has(path.dataset.src)){ path.classList.add('fired'); clearTimeout(path._ft); path._ft=setTimeout(()=>path.classList.remove('fired'),1200); }
+  });
+  layoutEdges();   // positions stable, but cheap + keeps svg sized if the pane reflowed
+  setStatus(true,'live');
+}
+// ── MQTT-over-WebSocket (same proxy the hero demo uses) ──
+let mqttUp=false;
+function setConn(){ const c=$('#conn'); if(c) c.textContent = mqttUp ? 'live · MQTT' : 'connecting…'; }
+const _wsUrl=`${location.protocol==='https:'?'wss':'ws'}://${location.host}/fx/mqtt`;
+const mqttClient=mqtt.connect(_wsUrl,{clientId:'contp-'+Math.random().toString(16).slice(2,8), username:'default', password:'default', clean:true, reconnectPeriod:3000, connectTimeout:8000});
+
+// Real Solace SWIM feeds → their ingest tables. On a live event, flash the source
+// chip + its ingest table box + the connector edge between them.
+const STREAM_PREFIX = [
+  ['FDPS/flightPlan/','src_flightplan'],
+  ['TTP/flightData/', 'src_eta'],
+  ['TTP/airportInfo/','src_rate'],
+  ['aviation/metar/', 'src_metar'],
+  ['TTP/restriction/','src_tmr'],
+];
+function pulseStream(sid){
+  const n=NODE[sid]; if(!n) return;
+  flashNode(sid); flashNode(n.feeds);   // flash the Solace source chip + its ingest table
+  // cascade to the ingest table's transient (non-materialized) view children — they have
+  // no change stream of their own, so flash them in step with each message.
+  (CHILDREN[n.feeds]||[]).forEach(c=>{ if(NODE[c] && NODE[c].kind==='view') flashNode(c); });
+  const path=$('#edges').querySelector(`path[data-src="${sid}"]`);
+  if(path){ path.classList.add('fired'); clearTimeout(path._ft); path._ft=setTimeout(()=>path.classList.remove('fired'),900); }
+}
+// The three sink output topics → their sink boxes (flash on each real emit to Solace).
+const SINK_PREFIX = [
+  ['fl/faa/arrival-capacity/demand/',   'fl_arrival_demand_sink'],
+  ['fl/faa/arrival-capacity/breach/',   'fl_arrival_breach_sink'],
+  ['fl/faa/arrival-capacity/incident/', 'fl_arrival_incident_sink'],
+];
+
+// ── Created data products (session-only; see addProductToGraph) ──
+// Catalog source-stream name → the base-pipeline node it maps to, so a created product's
+// edges wire back into the shared lineage.
+const STREAM_TO_NODE = {
+  capacity_assessment:'capacity_assessment', weather:'metar_latest', flight:'flight',
+  airport_rate:'airport_rate', arrival_demand:'arrival_demand',
+  active_restrictions:'active_restriction', arrival_context:'arrival_context',
+  downstream_risk:'mcp_downstream_risk',
+};
+const PRODUCTS = [];   // {slug, productId, triggers:[{id, topicPrefix}]} — lost on reload (not persisted)
+function _mkDagNode(rowEl, id, kind, label, kd){
+  const el=document.createElement('div');
+  el.className='node k-'+kind; el.id='nd-'+id;
+  el.innerHTML=`<div class="nm">${label}</div><div class="kd">${kd}</div>`;
+  el.addEventListener('mouseenter', ()=>showTip(id, el));
+  el.addEventListener('mouseleave', hideTip);
+  el.addEventListener('click', ()=>openSql(id));
+  rowEl.appendChild(el); return el;
+}
+// On create, append the product (+ its triggers) to the graph, wired to the shared source
+// nodes it reads, and flashing on its own fl/cp/<slug>/… output topics.
+function addProductToGraph(res, spec){
+  const slug = res.slug || spec.name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+  if(PRODUCTS.some(p=>p.slug===slug)) return;   // already drawn this session
+  const dag=$('#dag');
+  const prodId='prod_'+slug;
+  const r1=document.createElement('div'); r1.className='dag-row'; dag.appendChild(r1);
+  _mkDagNode(r1, prodId, 'product', spec.name, 'data product');
+  NODE[prodId]={id:prodId, label:spec.name, kind:'product', stage:0}; NODES.push(NODE[prodId]);
+  SQLDEFS[prodId]=spec.sql || '(no SQL provided)'; SQLSRC[prodId]='data product';
+  (spec.source_streams||[]).forEach(s=>{ const nid=STREAM_TO_NODE[s]; if(nid && NODE[nid]) EDGES.push([nid, prodId]); });
+  const trigs=[];
+  const specTrigs = spec.triggers || [];
+  if(specTrigs.length){
+    const r2=document.createElement('div'); r2.className='dag-row'; dag.appendChild(r2);
+    specTrigs.forEach((t,i)=>{
+      const tid='trig_'+slug+'_'+i;
+      _mkDagNode(r2, tid, 'producttrigger', t.name||('trigger '+(i+1)), 'trigger → solace');
+      NODE[tid]={id:tid, label:t.name||('trigger '+(i+1)), kind:'producttrigger', stage:0}; NODES.push(NODE[tid]);
+      SQLDEFS[tid]=`-- trigger: ${t.name||''}\nFIRE WHEN  ${t.condition||''}\nPUBLISH TO ${t.output_topic_template||''}\nPAYLOAD    ${(t.payload_columns||[]).join(', ')}`;
+      SQLSRC[tid]='trigger';
+      EDGES.push([prodId, tid]);
+      trigs.push({id:tid, topicPrefix:(t.output_topic_template||'').split('{')[0]});
+    });
+  }
+  PRODUCTS.push({slug, productId:prodId, triggers:trigs});
+  layoutEdges();
+  const el=document.getElementById('nd-'+prodId); if(el) el.scrollIntoView({block:'nearest', behavior:'smooth'});
+}
+
+mqttClient.on('connect', ()=>{ mqttUp=true; setConn(); STREAM_PREFIX.concat(SINK_PREFIX).forEach(([t])=>mqttClient.subscribe(t+'#',{qos:0})); mqttClient.subscribe('fl/cp/#',{qos:0}); });
+mqttClient.on('reconnect', ()=>{ mqttUp=false; setConn(); });
+mqttClient.on('close', ()=>{ mqttUp=false; setConn(); });
+mqttClient.on('error', ()=>{ mqttUp=false; setConn(); });
+mqttClient.on('message', (topic, message)=>{
+  try{
+    for(const [pre,sid] of STREAM_PREFIX){ if(topic.startsWith(pre)){ pulseStream(sid); return; } }
+    for(const [pre,sid] of SINK_PREFIX){ if(topic.startsWith(pre)){ flashNode(sid); return; } }
+    if(topic.startsWith('fl/cp/')){   // a created data product's output → flash its node/trigger
+      for(const p of PRODUCTS){
+        if(topic.startsWith('fl/cp/'+p.slug+'/')){
+          const trg=p.triggers.find(t=>t.topicPrefix && topic.startsWith(t.topicPrefix));
+          flashNode(trg ? trg.id : p.productId);
+          return;
+        }
+      }
+    }
+  }catch(e){ console.warn(e); }
+});
+setConn();
+
+// ── MV change stream: backend fans in every materialized view's Feldera change feed
+// (one SSE) so each box flashes on ANY change — inserts, deletes, and in-place updates
+// the COUNT poll can't see. EventSource auto-reconnects on error. ──
+(function mvChangeStream(){
+  let es; try{ es=new EventSource('/api/faa/stream/mv-changes'); }catch{ return; }
+  es.addEventListener('mv', e=>{ try{ (JSON.parse(e.data).views||[]).forEach(flashNode); }catch{} });
+})();
+
+// ── Add data product (generation engine, via the same-origin api proxy) ──
+const _dpv = s => $(s).value.trim();
+const _dplist = s => _dpv(s).split(',').map(x=>x.trim()).filter(Boolean);
+let DP_PRESETS=[];
+async function loadPresets(){
+  try{ DP_PRESETS = await (await fetch('/api/faa/data-product/presets')).json(); }catch{ DP_PRESETS=[]; }
+  const sel=$('#dpPreset'); sel.innerHTML='';
+  if(!Array.isArray(DP_PRESETS) || !DP_PRESETS.length){ const o=document.createElement('option'); o.textContent='(no presets)'; sel.appendChild(o); return; }
+  DP_PRESETS.forEach((p,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=(p.spec&&p.spec.name)||p.file; sel.appendChild(o); });
+  sel.onchange=()=>fillDP(sel.value); sel.value='0'; fillDP(0);
+}
+function fillDP(i){
+  const s=((DP_PRESETS[i]||{}).spec)||{};
+  const _pd=$('#dpPresetDesc'); if(_pd) _pd.textContent=s.description||'';
+  $('#dpName').value=s.name||''; $('#dpDesc').value=s.description||''; $('#dpSql').value=s.sql||'';
+  $('#dpStreams').value=(s.source_streams||[]).join(', '); $('#dpKeys').value=(s.key_columns||[]).join(', ');
+  $('#dpEtc').value=s.event_time_column||'';
+  const t=(s.triggers||[])[0]||{};
+  $('#dpTname').value=t.name||''; $('#dpTopic').value=t.output_topic_template||'';
+  $('#dpCond').value=t.condition||''; $('#dpPayload').value=(t.payload_columns||[]).join(', ');
+}
+function openDP(){ $('#dpOverlay').style.display='flex'; }
+function closeDP(){ $('#dpOverlay').style.display='none'; }
+// Click a node to see the raw SQL behind that object (large, readable — the TV path for hover-SQL).
+async function openSql(id){
+  const nd=NODE[id]; _sqlOpenId=id;
+  const title=(nd && (nd.kind==='product'||nd.kind==='producttrigger')) ? nd.label : id;
+  const t=$('#sqlTitle'); if(t) t.textContent=title;
+  const s=$('#sqlSrc');   if(s) s.textContent=SQLSRC[id]||'faa_program.sql';
+  const b=$('#sqlBody');
+  $('#sqlOverlay').style.display='flex';
+  if(!b) return;
+  if(SQLDEFS[id]){ b.textContent=SQLDEFS[id]; return; }
+  b.textContent = _sqlLoaded ? 'no SQL for this node' : 'loading SQL from engine…';
+  if(!_sqlLoaded){
+    const okk = await ensureSql();
+    if(_sqlOpenId!==id) return;               // overlay moved on / closed while we waited
+    b.textContent = SQLDEFS[id]
+      || (okk ? 'no SQL for this node'
+              : 'SQL unavailable — engine not reachable (retries on next click)');
+  }
+}
+function closeSql(){ _sqlOpenId=null; $('#sqlOverlay').style.display='none'; }
+function dpStat(msg,cls){ const el=$('#dpStatus'); el.textContent=msg; el.className='dp-status'+(cls?' '+cls:''); }
+async function createDP(){
+  const name=_dpv('#dpName'), sql=_dpv('#dpSql');
+  if(!name || !sql || !_dplist('#dpStreams').length || !_dplist('#dpKeys').length){
+    dpStat('name, SQL, source streams and key columns are required','err'); return;
+  }
+  const spec={ name, description:_dpv('#dpDesc'), sql, source_streams:_dplist('#dpStreams'),
+    key_columns:_dplist('#dpKeys'), register_in_event_portal:false };
+  const etc=_dpv('#dpEtc'); if(etc) spec.event_time_column=etc;
+  if(_dpv('#dpTname')){ spec.triggers=[{ name:_dpv('#dpTname'), description:'', condition:_dpv('#dpCond'),
+    output_topic_template:_dpv('#dpTopic'), payload_columns:_dplist('#dpPayload'),
+    distinct:true, allow_volatile_payload:true, recency_window:'60 minutes' }]; }
+  const btn=$('#dpCreate'); btn.disabled=true; dpStat('creating…','work');
+  let res;
+  try{ res=await (await fetch('/api/faa/data-product/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(spec)})).json(); }
+  catch(e){ dpStat('✗ request failed: '+e,'err'); btn.disabled=false; return; }
+  if(res.error && !/already exists/i.test(res.error)){ dpStat('✗ '+res.error,'err'); btn.disabled=false; return; }
+  addProductToGraph(res, spec);   // append the product + trigger nodes to the graph (session-only)
+  const live=res.live_topic || ('fl/cp/'+(res.slug||name)+'/live');
+  const est=res.estimated_ready_secs;
+  dpStat(`compiling… (~${est||'?'}s) · ${live}`,'work');
+  const deadline=Date.now()+180000;
+  (function poll(){
+    fetch('/api/faa/data-product/status/'+encodeURIComponent(name)).then(r=>r.json()).then(d=>{
+      const st=(d.status||'').toLowerCase();
+      if(st==='running'){ dpStat('✓ running · '+live,'ok'); btn.disabled=false; return; }
+      if(d.error && !st){ dpStat('✗ '+d.error,'err'); btn.disabled=false; return; }
+      if(Date.now()<deadline){ dpStat((d.status||'compiling')+'… · '+live,'work'); setTimeout(poll,3000); }
+      else { dpStat('still '+(d.status||'compiling')+' — check back shortly','work'); btn.disabled=false; }
+    }).catch(()=>setTimeout(poll,3000));
+  })();
+}
+
+// ── Boot ──
+// TV / big-room kiosk mode is the DEFAULT (enlarged node names + live motion, fine detail stripped).
+// Opt out for the detailed desktop view with ?tv=0 (also: off / false / no).
+const _tv = new URLSearchParams(location.search).get('tv');
+if (!(_tv !== null && /^(0|off|false|no)$/i.test(_tv.trim()))) document.body.classList.add('tv');
+{ const s=document.getElementById('tvnav-sam'); if(s) s.href='http://'+(location.hostname||'localhost')+':8800'; }
+buildDag();
+renderStepper();
+loadPresets();
+// Load the program SQL in the background, retrying for ~15s so a cold-start engine
+// (page opened during `make up`) still fills the tooltips without a manual reload.
+(async function initSql(){
+  for(let i=0;i<10 && !_sqlLoaded;i++){
+    if(await ensureSql()) break;
+    await new Promise(r=>setTimeout(r,1500));
+  }
+})();
+pollPipeline();
+setInterval(pollPipeline, POLL_MS);
+</script>
+</body>
+</html>

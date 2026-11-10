@@ -1,0 +1,42 @@
+kind: manifest
+name: dev
+description: "Local development — platform layer (models + connectors) the premade arrival-capacity solution binds to, on embedded SAM at localhost:8800"
+target:
+  url: "http://127.0.0.1:8800"
+  auth:
+    type: bearer_token
+    envVar: SAM_PLATFORM_TOKEN
+# The platform layer: the models and connectors the reference solution references
+# BY NAME. Deployed by `make apply` before `make apply-reference` deploys the
+# arrival-capacity solution that binds them.
+resources:
+  models:
+    # Fast slot (Haiku) — the triage decider + the three System-2 specialists (modelProvider: [general]).
+    - general
+    # Sonnet slot for the fast/slow brief (System 2): the Lead Briefer in the
+    # arrival-capacity solution runs on this (modelProvider: [investigation]),
+    # isolated from `general` so synthesis quality isn't starved. Deployed here first.
+    - investigation
+  connectors:
+    # Continuum as data products / triggers — the System-2 specialists query it live.
+    - continuum-mcp
+    # Event Portal (optional) — starts without a token; kept available for registration.
+    - event-portal-mcp
+    # Outbound Solace publish — the arrival-capacity workflow's interim fast-triage
+    # verdict (a tool node calls it mid-run). Platform connector so the workflow's
+    # tool node can reference it by name; deployed by `make apply` before the solution.
+    - event-mesh-publish
+  skills:
+    # Reference skills the SolutionBuilder agent loads at runtime (load_skill).
+    # Skills are directories under sam/skills/<name>/ (see schema-refs layout).
+    - solution-design
+    - continuum-data-product
+    - solace-event-portal
+    - schema-refs
+  agents:
+    # Runtime agent-generation: from one sentence, discovers Continuum data
+    # products + Event Portal objects and generates a new arrival-capacity /
+    # airspace solution (data product -> trigger -> gateway -> workflow ->
+    # decision node -> decision event). Binds general/investigation + the
+    # continuum-mcp / event-portal-mcp connectors above.
+    - SolutionBuilder

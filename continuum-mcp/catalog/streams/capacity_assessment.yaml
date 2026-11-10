@@ -1,0 +1,37 @@
+name: capacity_assessment
+kind: derived
+description: >-
+  The arrival-capacity picture per airport per bin: expected arrival demand versus
+  the AAR in effect for the bin, with the overage, ETA quality and an exceeded
+  flag. Published by the base pipeline on fl/faa/arrival-capacity/demand/{airport}
+  as a full changelog (inserts and deletes, so a recovering bin clears). The hero
+  live view; products enrich it with weather, restrictions or custom thresholds.
+relation: capacity_assessment
+base_pipeline: arrival-capacity
+topic_subscriptions:
+  - fl/faa/arrival-capacity/demand/>
+topic_pattern: fl/faa/arrival-capacity/demand/{airport}
+columns:
+  - {name: airport, type: VARCHAR, description: ICAO airport identifier (key)}
+  - {name: bin_start, type: TIMESTAMP, description: Start of the rolling demand bin (key)}
+  - {name: bin_end, type: TIMESTAMP, description: End of the rolling demand bin}
+  - {name: demand, type: BIGINT, description: Expected arrivals in the bin}
+  - {name: bin_capacity, type: INTEGER, description: AAR in effect for the bin (arrivals/hour)}
+  - {name: runway_config, type: VARCHAR}
+  - {name: overage, type: BIGINT, description: demand - bin_capacity}
+  - {name: eta_quality, type: DOUBLE, description: Fraction of the demand backed by a high-quality ETA}
+  - {name: exceeded, type: BOOLEAN, description: True when demand exceeds the bin capacity}
+key_columns: [airport, bin_start]
+event_time_column: bin_start
+changelog: full
+ingestable: true
+volatile_columns: [demand, overage, eta_quality]
+snapshot: true
+snapshot_sql: SELECT * FROM capacity_assessment
+notes: >-
+  Product pipelines ingest this stream with two connectors: a one-shot url_input
+  snapshot of the base pipeline's capacity_assessment (via its ad-hoc query
+  endpoint) and the live solace_input on fl/faa/arrival-capacity/demand/>. The
+  snapshot gives a product created mid-stream the current bins instead of an empty
+  view until the next recompute. A change landing between the snapshot read and the
+  queue subscription start can be missed; this small race is accepted.

@@ -1,0 +1,37 @@
+name: arrival_context
+kind: derived
+description: >-
+  Capacity-breach events enriched with the airport descriptor, latest weather and
+  any active restriction — the self-contained decision brief the agent acts on.
+  Published by the base pipeline on fl/faa/arrival-capacity/breach/{airport}
+  (inserts only: the breach sink skips deletes, so a recovering bin does not emit a
+  noisy delete). Latest breach per airport+bin wins.
+relation: arrival_context
+base_pipeline: arrival-capacity
+topic_subscriptions:
+  - fl/faa/arrival-capacity/breach/>
+topic_pattern: fl/faa/arrival-capacity/breach/{airport}
+columns:
+  - {name: airport, type: VARCHAR, description: ICAO airport identifier (key)}
+  - {name: airport_name, type: VARCHAR}
+  - {name: tracon, type: VARCHAR, description: Owning TRACON}
+  - {name: bin_start, type: TIMESTAMP, description: Start of the breaching bin (key)}
+  - {name: bin_end, type: TIMESTAMP}
+  - {name: demand, type: BIGINT}
+  - {name: bin_capacity, type: INTEGER, description: AAR in effect for the bin}
+  - {name: overage, type: BIGINT}
+  - {name: severity, type: VARCHAR, description: "MARGINAL, MODERATE or SEVERE"}
+  - {name: runway_config, type: VARCHAR}
+  - {name: eta_quality, type: DOUBLE}
+  - {name: wx_flight_category, type: VARCHAR, description: "VFR, MVFR, IFR or LIFR"}
+  - {name: wx_wind_dir, type: INTEGER}
+  - {name: wx_wind_kt, type: INTEGER}
+  - {name: wx_visibility_sm, type: VARCHAR}
+  - {name: wx_raw, type: VARCHAR, description: Raw METAR observation}
+  - {name: active_restriction_type, type: VARCHAR}
+  - {name: active_restriction_reason, type: VARCHAR}
+key_columns: [airport, bin_start]
+event_time_column: bin_start
+changelog: inserts_only
+ingestable: true
+volatile_columns: []

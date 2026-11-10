@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Continuum — Capacity Watch</title>
+<!--
+  The 5-minute demo console. The ONLY page on screen besides the Continuum SQL
+  console. Everything the old terminal panes did, with nothing to type live.
+
+    LEFT   fl/faa/arrival-capacity/demand/#   raw firehose — fast and unreadable by design
+    RIGHT  fl/faa/arrival-capacity/breach/#   the business object, one row per airport
+    BOTTOM two inject buttons                 the only things the presenter touches
+
+  Transport is mqtt.js over the existing /fx/mqtt WebSocket proxy — the
+  same path demo.html uses. The proxy is a bidirectional byte relay, so the
+  browser both subscribes AND publishes; no backend route is needed for the
+  injects. (?inject=http switches to the API fallback — see pub() below.)
+
+  Type is roughly 2x demo.html's. That page is a dense laptop view; this one has
+  to read from the back of a room.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Space+Mono&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+:root{
+  --dark:#03213B; --deep:#093B5F; --panel:#0b2e4d; --panel2:#0e3357;
+  --green:#00C895; --bright:#ABFF88; --orange:#FCA829; --red:#FF4444;
+  --sky:#C2F7FF; --white:#fff; --muted:#7fa6c4; --line:rgba(194,247,255,.12);
+  --mono:'Space Mono',monospace; --sans:'Figtree',system-ui,sans-serif;
+}
+html,body{margin:0;height:100%;background:var(--dark);color:var(--white);font-family:var(--sans);font-size:15px}
+body{display:flex;flex-direction:column;overflow:hidden}
+
+header{display:flex;align-items:center;gap:16px;padding:12px 20px;background:var(--deep);border-bottom:1px solid var(--line);flex:none}
+header h1{margin:0;font-size:20px;font-weight:700;letter-spacing:.3px}
+header .sub{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:1px;text-transform:uppercase}
+header .spacer{flex:1}
+.chip{font-family:var(--mono);font-size:12px;letter-spacing:1px;padding:5px 12px;border-radius:20px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.chip.run{color:var(--dark);background:var(--green);border-color:var(--green);font-weight:700}
+.chip.stop{color:var(--orange);border-color:var(--orange)}
+.conn{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.dot{width:12px;height:12px;border-radius:50%;background:var(--muted);transition:background .3s,box-shadow .3s}
+.dot.up{background:var(--green);box-shadow:0 0 12px var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+.stage{flex:1;display:grid;grid-template-columns:1.15fr 1fr;gap:14px;padding:14px;min-height:0}
+.col{background:var(--panel);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.col h2{margin:0;padding:12px 16px;font-size:13px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--sky);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+.col h2 .note{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.5px;text-transform:none;margin-left:auto}
+.col .body{flex:1;overflow:hidden;min-height:0}
+
+/* ── Firehose ─────────────────────────────────────────────────────────────── */
+#feed{height:100%;overflow:hidden;font-family:var(--mono);font-size:17px;line-height:1.55;padding:6px 0}
+#feed .r{display:flex;gap:14px;padding:1px 16px;white-space:nowrap;color:#9fc4dd}
+#feed .r .t{color:var(--muted);flex:none}
+#feed .r .rg{color:var(--sky);flex:none;width:96px}
+#feed .r .am{flex:none;width:112px;text-align:right}
+#feed .r .d{flex:none;width:92px;font-weight:700}
+#feed .r .id{color:#5d8bab;overflow:hidden;text-overflow:ellipsis}
+#feed .r.dec{background:rgba(255,68,68,.10)}
+#feed .r.dec .d{color:var(--red)}
+#feed .r.wa .rg{color:var(--bright);font-weight:700}
+
+/* ── Business object ──────────────────────────────────────────────────────── */
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+thead th{font-family:var(--mono);font-size:11px;font-weight:400;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:right;padding:10px 14px;border-bottom:1px solid var(--line)}
+thead th:first-child{text-align:left}
+tbody td{padding:14px;font-size:23px;text-align:right;border-bottom:1px solid rgba(194,247,255,.06)}
+tbody td:first-child{text-align:left;font-family:var(--mono);font-size:19px;color:var(--sky)}
+tbody td.pct{font-size:34px;font-weight:700;font-family:var(--mono)}
+tbody td.st{font-family:var(--mono);font-size:14px;letter-spacing:1px}
+tbody tr.empty td{color:#3f6584}
+.green{color:var(--green)} .amber{color:var(--orange)} .red{color:var(--red)}
+td.st.ELEVATED,td.st.CRITICAL{color:var(--orange);font-weight:700}
+@keyframes flash{from{background:rgba(194,247,255,.22)}to{background:transparent}}
+.chg{animation:flash .6s ease-out}
+
+/* ── Inject bar ───────────────────────────────────────────────────────────── */
+.inject{flex:none;display:flex;align-items:center;gap:14px;padding:14px 20px;background:var(--deep);border-top:1px solid var(--line)}
+button{font-family:var(--sans);font-size:16px;font-weight:600;padding:13px 26px;border-radius:9px;border:1px solid var(--green);background:transparent;color:var(--green);cursor:pointer;transition:background .15s,color .15s}
+button:hover:not(:disabled){background:var(--green);color:var(--dark)}
+button:disabled{opacity:.4;cursor:default}
+button.warn{border-color:var(--orange);color:var(--orange)}
+button.warn:hover:not(:disabled){background:var(--orange);color:var(--dark)}
+.inject label{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:1px}
+.inject input{width:64px;padding:11px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--white);font-family:var(--mono);font-size:16px;text-align:center}
+#toast{margin-left:auto;font-family:var(--mono);font-size:13px;color:var(--bright);opacity:0;transition:opacity .3s}
+#toast.on{opacity:1}
+
+/* ── TODO banner ──────────────────────────────────────────────────────────── */
+.todo{flex:none;background:var(--orange);color:var(--dark);font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.5px;text-align:center;padding:10px 20px;border-bottom:2px solid var(--dark)}
+</style>
+</head>
+<body>
+
+<div class="todo">TODO: the capacity-watch pipeline (fl/faa/arrival-capacity/breach/#) must be provided by stack/config before this console's right pane populates.</div>
+
+<header>
+  <h1>Continuum</h1>
+  <span class="sub">Capacity Watch · live</span>
+  <span class="spacer"></span>
+  <span class="chip" id="pipe">pipeline …</span>
+  <span class="conn"><span class="dot" id="dot"></span><span id="connTxt">connecting…</span></span>
+</header>
+
+<div class="stage">
+  <div class="col">
+    <h2>Live arrival mesh <span class="note">fl/faa/arrival-capacity/demand/&gt;</span></h2>
+    <div class="body"><div id="feed"></div></div>
+  </div>
+  <div class="col">
+    <h2>capacity_watch <span class="note">fl/faa/arrival-capacity/breach/&gt;</span></h2>
+    <div class="body">
+      <table>
+        <thead><tr><th>Airport</th><th>Arrivals/bin</th><th>Published AAR</th><th>Utilization %</th><th>Band</th></tr></thead>
+        <tbody id="watch"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="inject">
+  <button id="btnFlag" class="warn">Flag airport</button>
+  <button id="btnBurst">Burst capacity breaches</button>
+  <label for="count">count</label>
+  <input id="count" type="number" value="30" min="1" max="100">
+  <span id="toast"></span>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+
+// The hero airport the whole demo turns on. Kept in one place so retuning which
+// airport is the focus is a single edit here plus the ORDER list.
+const TARGET = 'SFO';
+const ORDER  = ['SFO','LAX','ORD','JFK','ATL'];
+
+// Colour bands for utilization_pct (demand ÷ published AAR). Deliberately HERE
+// and not in SQL: api/static is bind-mounted, so recalibrating after a rehearsal
+// is a file save + refresh rather than a pipeline redeploy.
+//
+// Calibrated against the demo feed: resting utilization runs well under AMBER per
+// airport (SFO is the quiet one), and a burst of capacity breaches peaks SFO into
+// the RED band. So everything rests green and the burst lands red. A utilization
+// at/above 100% means demand exceeds the published rate — a capacity breach.
+//
+// RE-CHECK THESE AFTER ANY FEED CHANGE:
+//   resting — all five airports should be green
+//   click Burst, then again  (SFO should be red)
+// If a peak lands amber instead of red, raise the count field rather than
+// moving these — the burst size is the intended tuning lever.
+const AMBER = 90, RED = 100;
+
+// 'YYYY-MM-DD HH:MM:SS' UTC — no T, no Z. Calcite CASTs anything else to NULL,
+// which would make every injected event vanish from the window. toISOString
+// is UTC by definition, so this is right regardless of the presenter's timezone.
+const UTC = (ageSeconds=0) =>
+  new Date(Date.now() - ageSeconds*1000).toISOString().slice(0,19).replace('T',' ');
+
+// How far back to spread the burst's bin timestamps, in seconds.
+//
+// This is the single most important tuning constant on the page. All 30 events
+// are PUBLISHED at once, so the spike is instant — but if they also all carry
+// the same timestamp they leave the window at the same instant, and the decay is
+// a cliff: flat line then a snap back to baseline.
+//
+// Spreading bin_start across the trailing 45s makes them expire one by one — a
+// continuous drift downward, which is what Beat 5 actually asks the room to
+// watch. Raise toward 55 for a longer, gentler drift; lower for a sharper one.
+const BURST_SPREAD_S = 45;
+
+// ── Continuum sink envelope ───────────────────────────────────────────────────
+// Verbatim from demo.html. The sink sets skip_deletes, so in practice only
+// {insert} arrives — the delete branch is kept so this still behaves if that
+// config is ever removed.
+function flattenSink(buf){
+  const txt=buf.toString(); const out=[];
+  const take=o=>{ if(o&&typeof o==='object'){ if('insert' in o){ if(o.insert) out.push(o.insert); } else if('delete' in o){ /* drop */ } else out.push(o); } };
+  let parsed; try{ parsed=JSON.parse(txt); }catch{ parsed=undefined; }
+  if(parsed===undefined){ for(const line of txt.split('\n')){ const s=line.trim(); if(!s) continue; try{ take(JSON.parse(s)); }catch{} } }
+  else if(Array.isArray(parsed)) parsed.forEach(take);
+  else take(parsed);
+  return out;
+}
+const lc = o => Object.fromEntries(Object.entries(o).map(([k,v])=>[k.toLowerCase(),v]));
+
+// ── RIGHT: the business object ──────────────────────────────────────────────
+// Keyed by airport and rendered in fixed ORDER, never sorted by value — a table
+// whose rows jump on every update is unreadable on stage. Rows are never
+// deleted client-side either: belt-and-braces behind the fixed-dimension CTE in
+// the SQL, so an airport can't silently disappear mid-decay.
+const ROWS = {};
+
+function renderWatch(changed){
+  const tb = $('#watch');
+  tb.innerHTML = ORDER.map(ap => {
+    const r = ROWS[ap];
+    if(!r) return `<tr class="empty"><td>${ap}</td><td>—</td><td>—</td><td class="pct">—</td><td class="st">—</td></tr>`;
+    const pct = r.utilization_pct != null ? Number(r.utilization_pct)
+              : (r.demand != null && r.bin_capacity) ? (Number(r.demand)/Number(r.bin_capacity)*100) : NaN;
+    const band = isNaN(pct) ? '' : pct >= RED ? 'red' : pct >= AMBER ? 'amber' : 'green';
+    const pctTxt = isNaN(pct) ? '—' : pct.toFixed(1)+'%';
+    const st = r.band || r.status || 'CLEAR';
+    return `<tr><td>${ap}</td><td>${r.demand ?? r.arrivals_60s ?? '—'}</td><td>${r.bin_capacity ?? r.published_aar ?? '—'}</td>`
+         + `<td class="pct ${band} ${changed===ap?'chg':''}">${pctTxt}</td>`
+         + `<td class="st ${st}">${st}</td></tr>`;
+  }).join('');
+}
+renderWatch();
+
+function onWatchRow(raw){
+  const r = lc(raw);
+  if(!r.airport) return;
+  const prev = ROWS[r.airport];
+  ROWS[r.airport] = r;
+  renderWatch(prev && Number(prev.utilization_pct) !== Number(r.utilization_pct) ? r.airport : null);
+}
+
+// ── LEFT: the firehose ──────────────────────────────────────────────────────
+// Batched through requestAnimationFrame: at 30+ msg/s, inserting each event
+// straight into the DOM thrashes layout and the panel visibly stutters.
+const FEED_MAX = 26;
+let pend = [], raf = 0;
+
+function onDemand(topic, p){
+  pend.push([topic, p]);
+  if(!raf) raf = requestAnimationFrame(flushFeed);
+}
+
+function flushFeed(){
+  raf = 0;
+  const box = $('#feed'), frag = document.createDocumentFragment();
+  // newest first, and never render more than a screenful of backlog
+  for(const [topic, p] of pend.slice(-FEED_MAX).reverse()){
+    const lv = topic.split('/');            // fl/faa/arrival-capacity/demand/{airport}
+    const airport = lv[4] || p.airport || '?';
+    const exceeded = !!p.exceeded;
+    const status = exceeded ? 'BREACH' : 'OK';
+    const el = document.createElement('div');
+    // The breach class comes from the payload's exceeded flag — the burst lights
+    // up red without the page ever recomputing capacity itself.
+    el.className = 'r' + (exceeded ? ' dec' : '') + (airport===TARGET ? ' wa' : '');
+    el.innerHTML = `<span class="t">${(p.bin_start||'').slice(11)}</span>`
+                 + `<span class="rg">${airport}</span>`
+                 + `<span class="am">${p.demand ?? '—'}</span>`
+                 + `<span class="d">${status}</span>`
+                 + `<span class="id">AAR ${p.bin_capacity ?? '—'}${p.overage!=null?' · +'+p.overage:''}</span>`;
+    frag.appendChild(el);
+  }
+  pend.length = 0;
+  box.insertBefore(frag, box.firstChild);
+  while(box.children.length > FEED_MAX) box.removeChild(box.lastChild);
+}
+
+// ── MQTT ────────────────────────────────────────────────────────────────────
+const wsUrl = `${location.protocol==='https:'?'wss':'ws'}://${location.host}/fx/mqtt`;
+const mqttClient = mqtt.connect(wsUrl, {
+  clientId:'console-'+Math.random().toString(16).slice(2,8),
+  username:'default', password:'default', clean:true, reconnectPeriod:3000, connectTimeout:8000,
+});
+let mqttUp = false;
+function setConn(){
+  $('#dot').className = 'dot' + (mqttUp?' up':'');
+  $('#connTxt').textContent = mqttUp ? 'live · mesh' : 'connecting…';
+}
+setConn();
+
+mqttClient.on('connect', ()=>{
+  mqttUp = true; setConn();
+  // MQTT wildcards (#), NOT the SMF wildcards (>) used in queue subscriptions.
+  mqttClient.subscribe('fl/faa/arrival-capacity/demand/#', {qos:0});
+  mqttClient.subscribe('fl/faa/arrival-capacity/breach/#', {qos:0});
+  mqttClient.subscribe('signals/#',                        {qos:0});
+});
+['reconnect','close','error','offline'].forEach(e =>
+  mqttClient.on(e, ()=>{ mqttUp = false; setConn(); }));
+
+mqttClient.on('message', (topic, message)=>{
+  try{
+    if(topic.startsWith('fl/faa/arrival-capacity/breach/')){
+      flattenSink(message).forEach(onWatchRow);
+    } else if(topic.startsWith('fl/faa/arrival-capacity/demand/')){
+      let p; try{ p = JSON.parse(message.toString()); }catch{ return; }
+      onDemand(topic, p);
+    } else if(topic.startsWith('signals/')){
+      // Confirmation toast only — deliberately never touches the table. The
+      // table stays purely sink-driven, or the band column would light up
+      // while the pipeline is still stopped and undercut the whole story.
+      toast('signal declared → ' + topic.split('/')[2]);
+    }
+  }catch(err){ console.warn(err); }
+});
+
+// ── Publishing ──────────────────────────────────────────────────────────────
+// Browser MQTT publish through the proxy is verified working. ?inject=http is
+// an explicit break-glass switch to the API's SMF publisher — an override
+// rather than a silent auto-fallback, so if it breaks mid-demo the presenter
+// appends the param and reloads: five seconds, deterministic, no hidden state.
+const INJECT = new URLSearchParams(location.search).get('inject') || 'mqtt';
+
+async function pub(topic, obj){
+  const payload = JSON.stringify(obj);
+  if(INJECT === 'mqtt' && mqttUp){ mqttClient.publish(topic, payload, {qos:0}); return; }
+  await fetch('/api/faa/inject/publish', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({topic, payload}),
+  });
+}
+
+async function pubBatch(items){
+  if(INJECT === 'mqtt' && mqttUp){
+    for(const [t,o] of items){ mqttClient.publish(t, JSON.stringify(o), {qos:0}); await sleep(25); }
+    return;
+  }
+  await fetch('/api/faa/inject/publish-batch', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({messages: items.map(([t,o])=>({topic:t, payload:JSON.stringify(o)}))}),
+  });
+}
+
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+let toastTimer;
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove('on'), 2600);
+}
+
+// ── Inject: the weather / restriction signal ─────────────────────────────────
+$('#btnFlag').addEventListener('click', async ()=>{
+  // ts is cosmetic — the capacity MV orders on the broker's clock, not this one —
+  // but it is sent in the seed's shape so the payloads stay identical. A storm
+  // lowering the AAR is the signal that bunches arrivals.
+  await pub(`signals/weather/${TARGET}`, {airport:TARGET, signal:'AAR_REDUCED', severity:'ELEVATED', ts:UTC()});
+  toast(`ELEVATED → ${TARGET}`);
+});
+
+// ── Inject: the capacity-breach burst ────────────────────────────────────────
+// Mirrors the arrival demand feed's shape — same keys, same nesting — so the
+// same Continuum table ingests these indistinguishably from feed traffic. A
+// capacity breach (demand > published AAR for the bin) is the feed's own breach
+// rule, so the result is honest rather than asserted.
+// `age` staggers each event's bin timestamp into the recent past so the burst
+// decays as a drift rather than a cliff — see BURST_SPREAD_S.
+function demandEvent(airport, age=0){
+  const bin_start = UTC(age);
+  const bin_capacity = 30;                                   // published AAR for the bin
+  const demand = bin_capacity + 5 + Math.floor(Math.random()*20);  // bunched over the rate
+  const overage = demand - bin_capacity;
+  return [`fl/faa/arrival-capacity/demand/${airport}`, {
+    airport, bin_start, demand, bin_capacity, overage, exceeded:true,
+  }];
+}
+
+$('#btnBurst').addEventListener('click', async ()=>{
+  const btn = $('#btnBurst');
+  const n = Math.max(1, Math.min(100, parseInt($('#count').value, 10) || 30));
+  btn.disabled = true; toast(`bursting ${n} capacity breaches on ${TARGET}…`);
+  try{
+    // Evenly spaced ages across the trailing window, newest first, so the
+    // events expire one at a time instead of all at once.
+    await pubBatch(Array.from({length:n},
+      (_, i) => demandEvent(TARGET, (i / Math.max(1, n-1)) * BURST_SPREAD_S)));
+    toast(`${n} capacity breaches → ${TARGET}`);
+  } finally { btn.disabled = false; }
+});
+
+// ── Pipeline status chip ────────────────────────────────────────────────────
+// Gives the room a visual cue the moment the presenter clicks Start, before the
+// first row lands. Continuum's own API has no CORS headers, so this goes through
+// the api service.
+async function pollPipeline(){
+  try{
+    const r = await fetch('/api/faa/capacity-watch/status');
+    const s = (await r.json()).deployment_status || 'unknown';
+    const el = $('#pipe');
+    el.textContent = 'pipeline ' + s.toLowerCase();
+    el.className = 'chip ' + (s === 'Running' ? 'run' : s === 'unknown' ? '' : 'stop');
+  }catch{ /* keep the last known state */ }
+}
+pollPipeline(); setInterval(pollPipeline, 2000);
+</script>
+</body>
+</html>

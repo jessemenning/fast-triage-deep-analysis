@@ -1,0 +1,20 @@
+{
+  "name": "wind-arrival-risk",
+  "description": "Flags airports where too many planes are trying to land while the wind is strong and shifting. It continuously compares the arrivals expected in the coming hour against how many the airport can actually accept, alongside the latest wind report — so a capacity crunch is seen together with the wind that forced the runway change. It raises an alert when expected arrivals reach or exceed the airport's limit and the wind is 25 knots or stronger.",
+  "sql": "SELECT c.airport, c.bin_start, c.bin_end, c.demand, c.bin_capacity, c.overage, c.exceeded, c.eta_quality, w.flight_category, w.wind_dir_degrees, w.wind_speed_kt, w.wx_string FROM capacity_assessment c JOIN metar_latest w ON c.airport = w.station_id",
+  "source_streams": ["capacity_assessment", "weather"],
+  "key_columns": ["airport", "bin_start"],
+  "event_time_column": "bin_start",
+  "triggers": [
+    {
+      "name": "wind-risk",
+      "description": "Arrival demand is at or over the published AAR while winds are strong (>= 25 kt) — a wind-driven capacity shortfall from a runway reconfiguration, worth a traffic manager's attention.",
+      "condition": "demand >= bin_capacity AND wind_speed_kt >= 25",
+      "output_topic_template": "fl/cp/wind-arrival-risk/wind-risk/{airport}",
+      "payload_columns": ["airport", "bin_start", "bin_end", "demand", "bin_capacity", "overage", "wind_dir_degrees", "wind_speed_kt", "flight_category", "wx_string"],
+      "distinct": true,
+      "allow_volatile_payload": true,
+      "recency_window": "30 minutes"
+    }
+  ]
+}

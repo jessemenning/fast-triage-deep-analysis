@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Inside Continuum — Arrival Capacity Internals</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Space+Mono&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+  :root{
+    --dark:#03213B; --deep:#093B5F; --panel:#0b2e4d; --panel2:#0e3357;
+    --green:#00C895; --bright:#ABFF88; --orange:#FCA829; --red:#FF4444;
+    --sky:#C2F7FF; --white:#fff; --muted:#7fa6c4; --line:rgba(194,247,255,.12);
+    --mono:'Space Mono',monospace; --sans:'Figtree',system-ui,sans-serif;
+    --databricks:#FF3621;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--dark);color:var(--white);font-family:var(--sans);font-size:14px}
+  body{display:flex;flex-direction:column;overflow:hidden}
+  a{color:var(--sky)}
+
+  header{display:flex;align-items:center;gap:14px;padding:9px 20px;border-bottom:1px solid var(--line);background:var(--deep)}
+  header .dot{width:11px;height:11px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);animation:pulse 2s infinite}
+  header h1{font-size:15px;margin:0;font-weight:700;letter-spacing:.3px}
+  header h1 .sub{font-weight:400;font-size:.72em;color:var(--muted);margin-left:6px}
+  header .spacer{flex:1}
+  header a.nav{color:var(--sky);font-size:12px;text-decoration:none;border:1px solid var(--line);padding:5px 10px;border-radius:6px}
+  header a.nav:hover{border-color:var(--sky);background:rgba(194,247,255,.08)}
+  header .conn{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* control bar */
+  .controls{display:flex;align-items:center;gap:10px;padding:8px 20px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .controls .lbl{font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+  select,.btn{font-family:var(--sans);font-size:12px;cursor:pointer;border:1px solid var(--line);border-radius:20px;padding:7px 13px;background:var(--panel2);color:var(--sky);transition:background .2s,transform .1s,border-color .2s}
+  select{color:var(--white)}
+  .btn:hover{transform:translateY(-1px);border-color:var(--sky);background:rgba(194,247,255,.08)}
+  .btn.primary{background:var(--green);color:var(--dark);border:none;font-weight:700;box-shadow:0 0 12px rgba(0,200,149,.35)}
+  .btn.ghost{background:transparent;color:var(--muted)}
+  .btn:disabled{opacity:.5;cursor:default;transform:none}
+
+  /* stage grid */
+  .stage{flex:1;display:grid;grid-template-columns:0.95fr auto 1.15fr auto 1.25fr auto 1fr;gap:0;padding:16px 20px 8px;overflow:hidden;min-height:0}
+  .col{background:var(--panel);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+  .col h2{margin:0;padding:11px 14px;font-size:12.5px;font-weight:700;letter-spacing:.3px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+  .col h2 .n{font-family:var(--mono);font-size:10px;color:var(--dark);background:var(--sky);border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-weight:700}
+  .col .body{padding:12px 14px;flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px}
+  .cap{font-family:var(--mono);font-size:9.5px;line-height:1.5;color:var(--muted)}
+  .cap b{color:var(--sky);font-weight:400}
+  .sql{font-family:var(--mono);font-size:9.5px;line-height:1.45;color:var(--bright);background:rgba(0,0,0,.28);border-left:2px solid var(--green);border-radius:4px;padding:7px 9px;white-space:pre-wrap;word-break:break-word}
+
+  /* arrow between stages */
+  .arrow{display:flex;align-items:center;justify-content:center;width:34px;color:var(--green);font-size:20px}
+
+  /* ingress feed */
+  .rate{font-family:var(--mono);display:flex;align-items:baseline;gap:6px}
+  .rate .big{font-size:26px;font-weight:700;color:var(--green)}
+  .rate .u{font-size:10px;color:var(--muted)}
+  .feed{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:4px;font-family:var(--mono);font-size:12px;
+    -webkit-mask-image:linear-gradient(to bottom,#000 80%,transparent);mask-image:linear-gradient(to bottom,#000 80%,transparent)}
+  /* greyed firehose — the point is volume/speed, not reading individual arrival updates */
+  .tr{color:#52708b;padding:4px 8px;border-radius:4px;background:rgba(194,247,255,.022);border-left:2px solid transparent;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:trin .22s ease-out;font-weight:400}
+  .tr.me{border-left-color:rgba(127,166,196,.4)}
+  .tr .t-pair{color:#6a88a2}
+  .tr .s-buy,.tr .s-sell{color:#52708b}
+  .tr .t-amt{color:#6a88a2}
+  .tr .t-cp,.tr .t-venue{color:#46607a}
+  @keyframes trin{from{opacity:0;transform:translateY(-7px)}to{opacity:1;transform:none}}
+
+  /* window / gauge */
+  .bignum{font-family:var(--mono);font-size:30px;font-weight:700;line-height:1}
+  .bignum.g{color:var(--green)} .bignum.a{color:var(--orange)} .bignum.r{color:var(--red)}
+  .sublbl{font-size:10px;color:var(--muted);margin-top:2px}
+  .gauge{height:14px;border-radius:8px;background:rgba(0,0,0,.3);overflow:hidden;position:relative;border:1px solid var(--line)}
+  .gauge .fill{height:100%;width:0;background:var(--green);transition:width .4s,background .4s}
+  .gauge .limit{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--white);opacity:.8}
+  .kv2{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:11.5px}
+  .kv2 .k{color:var(--muted)} .kv2 .v{text-align:right;font-family:var(--mono)}
+  .winbars{display:flex;align-items:flex-end;gap:2px;height:46px;padding-top:4px}
+  .winbars .b{flex:1;min-width:2px;background:var(--sky);opacity:.55;border-radius:1px 1px 0 0;align-self:flex-end}
+  .winbars .b.over{background:var(--red)} .winbars .b.ok{background:var(--green)}
+
+  /* trigger track */
+  .track-wrap{position:relative;margin:14px 0 4px}
+  .track{position:relative;height:30px;border-radius:6px;background:rgba(0,0,0,.3);border:1px solid var(--line);overflow:hidden}
+  .track .cum{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(90deg,rgba(0,200,149,.5),rgba(0,200,149,.75));transition:width .35s,background .35s}
+  .track .cum.breach{background:linear-gradient(90deg,rgba(255,68,68,.5),rgba(255,68,68,.8))}
+  .mark{position:absolute;top:-6px;bottom:-6px;width:2px}
+  .mark.limit{background:var(--white)}
+  .mark.thr{background:var(--orange);border-left:2px dashed var(--orange);width:0}
+  .mark .tag{position:absolute;top:-16px;transform:translateX(-50%);font-family:var(--mono);font-size:8.5px;white-space:nowrap;padding:1px 4px;border-radius:3px;background:var(--dark)}
+  .mark.limit .tag{color:var(--white)} .mark.thr .tag{color:var(--orange)}
+  .scalerow{display:flex;justify-content:space-between;font-family:var(--mono);font-size:8.5px;color:var(--muted);margin-top:3px}
+  input[type=range]{width:100%;accent-color:var(--orange)}
+  .thrval{font-family:var(--mono);font-size:12px;color:var(--orange);font-weight:700}
+  .firestate{font-family:var(--mono);font-size:12px;font-weight:700;padding:7px 10px;border-radius:6px;text-align:center;border:1px solid var(--line);color:var(--muted);transition:all .3s}
+  .firestate.armed{color:var(--green);border-color:var(--green);background:rgba(0,200,149,.08)}
+  .firestate.fired{color:var(--red);border-color:var(--red);background:rgba(255,68,68,.14);animation:pulse 1s 3}
+  .firelog{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:3px;font-family:var(--mono);font-size:10px}
+  .firelog .f{padding:3px 7px;border-radius:4px;border-left:2px solid var(--orange);background:rgba(252,168,41,.08);color:var(--bright)}
+  .firelog .f.real{border-left-color:var(--red);background:rgba(255,68,68,.1)}
+  .legend{display:flex;gap:12px;font-family:var(--mono);font-size:9px;color:var(--muted);flex-wrap:wrap}
+  .legend i{display:inline-block;width:14px;height:0;border-top:2px solid;vertical-align:middle;margin-right:4px}
+  .legend .thr i{border-top-style:dashed;color:var(--orange)} .legend .lim i{color:var(--white)}
+
+  /* emit */
+  .emit-pre{font-family:var(--mono);font-size:9.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;background:rgba(0,0,0,.3);border-radius:6px;padding:10px;color:var(--bright);flex:1;min-height:0;overflow:auto}
+  .emit-count{font-family:var(--mono);font-size:10px;color:var(--muted)}
+
+  /* left cell: two separate panels (Ingress + Databricks) with the navy page bg showing between */
+  .col-stack{display:flex;flex-direction:column;gap:12px;min-height:0}
+  .col-stack .ingress-col{flex:1 1 auto;min-height:120px}
+  .col-stack .dbx-col{flex:0 0 auto}
+  .col-stack .ref-col{flex:0 0 auto}
+  .ref-scroll{max-height:112px;overflow:auto}
+  .dbx-logo{width:18px;height:18px;border-radius:4px;background:var(--databricks);display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:#fff;font-family:var(--mono)}
+  .dbx-sync{font-family:var(--mono);font-size:9px;color:var(--muted)}
+  table.dbx-tbl{width:100%;border-collapse:collapse;font-size:11px}
+  table.dbx-tbl th{text-align:left;font-family:var(--mono);font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line);padding:4px 8px}
+  table.dbx-tbl td{padding:4px 8px;border-bottom:1px solid rgba(194,247,255,.06);font-family:var(--mono);font-size:10.5px}
+  table.dbx-tbl tr.me td{color:var(--sky);background:rgba(194,247,255,.05)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="dot"></div>
+  <h1>Inside Continuum <span class="sub">arrival capacity internals</span></h1>
+  <div class="spacer"></div>
+  <div class="conn" id="conn">connecting…</div>
+  <a class="nav" href="demo.html">← Hero demo</a>
+</header>
+
+<div class="controls">
+  <span class="lbl">Airport</span>
+  <select id="cpSel" onchange="selectAirport(this.value)"></select>
+  <button class="btn primary" id="addBtn" onclick="addArrivals()" title="Publish a small burst of arrivals against the focused airport — watch the rolling-hour demand climb">+ Add arrivals</button>
+  <button class="btn ghost" id="resetBtn" onclick="resetAirport()" title="Clear the rolling-hour window back to 0">↺ Reset</button>
+</div>
+
+<div class="stage">
+
+  <!-- 1 INGRESS (two separate source panels, navy gap between) -->
+  <div class="col-stack">
+    <section class="col ingress-col">
+      <h2><span class="n">1</span> Ingress <span style="flex:1"></span><span class="cap">live · arrival demand</span></h2>
+      <div class="body">
+        <div class="rate"><span class="big" id="rate">0</span><span class="u">arrivals / sec</span></div>
+        <div class="feed" id="feed"></div>
+      </div>
+    </section>
+    <section class="col dbx-col">
+      <h2>Rates <span style="flex:1"></span><span class="dbx-sync" id="dbxSync">—</span></h2>
+      <div class="body">
+        <div class="cap">TTP Airport Information · published AAR &amp; runway config, <b>joined</b> into the window</div>
+        <div class="ref-scroll"><table class="dbx-tbl">
+          <thead><tr><th>Airport</th><th>Runway config</th><th>Published AAR</th></tr></thead>
+          <tbody id="dbxBody"><tr><td colspan="3" style="color:var(--muted)">loading…</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+    <section class="col ref-col">
+      <h2>Weather <span style="flex:1"></span><span class="cap">METAR · side input</span></h2>
+      <div class="body">
+        <div class="ref-scroll"><table class="dbx-tbl">
+          <thead><tr><th>Station</th><th>Cat</th><th>Wind</th><th>Vis</th></tr></thead>
+          <tbody id="wxBody"><tr><td colspan="4" style="color:var(--muted)">loading…</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+    <section class="col ref-col">
+      <h2>Restrictions <span style="flex:1"></span><span class="cap">TMR · side input</span></h2>
+      <div class="body">
+        <div class="ref-scroll"><table class="dbx-tbl">
+          <thead><tr><th>Airport</th><th>Type</th><th>Reason</th></tr></thead>
+          <tbody id="tmrBody"><tr><td colspan="3" style="color:var(--muted)">none active</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="arrow">▶</div>
+
+  <!-- 2 WINDOW -->
+  <section class="col">
+    <h2><span class="n">2</span> Rolling window <span style="flex:1"></span><span class="cap" id="win-cp">—</span></h2>
+    <div class="body">
+      <div>
+        <div class="bignum g" id="cum">—</div>
+        <div class="sublbl">arrivals demanded · rolling hour</div>
+      </div>
+      <div class="gauge"><div class="fill" id="gfill"></div><div class="limit" id="glimit" style="left:66%"></div></div>
+      <div class="kv2">
+        <span class="k">Utilization</span><span class="v" id="util">—</span>
+        <span class="k">Published AAR</span><span class="v" id="lim">—</span>
+        <span class="k">Bins · hr</span><span class="v" id="t60">—</span>
+        <span class="k">Band</span><span class="v" id="band">—</span>
+      </div>
+      <div class="sublbl" style="margin-top:4px">window contents · Continuum's live trailing hour · <span id="winmeta">—</span></div>
+      <div class="winbars" id="winbars"></div>
+      <div class="sql">SUM(demand) OVER (
+  PARTITION BY airport
+  ORDER BY bin_start
+  RANGE INTERVAL '1' HOUR PRECEDING
+        AND CURRENT ROW)</div>
+    </div>
+  </section>
+
+  <div class="arrow">▶</div>
+
+  <!-- 3 TRIGGER -->
+  <section class="col">
+    <h2><span class="n">3</span> Trigger <span style="flex:1"></span><span class="cap">edge-detect · published AAR</span></h2>
+    <div class="body">
+      <div class="track-wrap">
+        <div class="track"><div class="cum" id="tcum"></div>
+          <div class="mark limit" id="mlimit"><span class="tag">published AAR</span></div>
+        </div>
+        <div class="scalerow"><span>0</span><span id="scaleMax">—</span></div>
+      </div>
+      <div class="firestate armed" id="firestate">● armed — demand under AAR</div>
+      <div class="sql">-- edge-detect: fire once on the upward crossing
+WHERE demand >= bin_capacity
+  AND LAG(demand) OVER (...) < bin_capacity</div>
+    </div>
+  </section>
+
+  <div class="arrow">▶</div>
+
+  <!-- 4 EMIT -->
+  <section class="col">
+    <h2><span class="n">4</span> Emit <span style="flex:1"></span><span class="emit-count" id="emitCount">×0</span></h2>
+    <div class="body">
+      <pre class="emit-pre" id="emit">— waiting for a capacity breach event —</pre>
+    </div>
+  </section>
+
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const fmtArr = v => Math.round(Number(v||0));
+
+// Airports the page can focus — matches the hero demo's seeded entities.
+const AIRPORTS = {
+  'KMKG': {name:'Muskegon County', aar:30, kind:'Regional'},
+  'KEWR': {name:'Newark Liberty Intl', aar:44, kind:'Metroplex'},
+  'KJFK': {name:'John F. Kennedy Intl', aar:44, kind:'Hub'},
+  'KORD': {name:"Chicago O'Hare Intl", aar:48, kind:'Hub'},
+};
+let focusedAirport = 'KEWR';
+let aarLimit  = AIRPORTS[focusedAirport].aar;
+let prevCum   = 0;                   // last cumulative value (for edge-detect)
+let breachCount = 0;
+let windowRows = [];                 // Continuum's current rolling-hour window contents (polled from /api/faa/demand)
+const refAars = {};                  // published AARs from the reference-data fetch
+
+// ── Populate the airport selector ──
+(()=>{ const sel=$('#cpSel'); for(const [ap,c] of Object.entries(AIRPORTS)){ const o=document.createElement('option'); o.value=ap; o.textContent=c.kind+' · '+ap+' '+c.name; sel.appendChild(o);} })();
+
+// ── Databricks / reference table (real values from /api/faa/rates) ──
+async function loadReference(){
+  try{
+    const r = await fetch('/api/faa/rates'); const rows = await r.json();
+    const body=$('#dbxBody'); body.innerHTML='';
+    rows.forEach(row=>{
+      const ap=row.airport;
+      if(row.aar!=null) refAars[ap]=Number(row.aar);
+      const tr=document.createElement('tr'); tr.dataset.cp=ap; if(ap===focusedAirport) tr.className='me';
+      tr.innerHTML = `<td>${ap}</td><td>${row.runway_config||'—'}</td><td>${row.aar!=null?row.aar+' /hr':'—'}</td>`;
+      body.appendChild(tr);
+    });
+    if(!body.children.length) body.innerHTML='<tr><td colspan="3" style="color:var(--muted)">no reference rows</td></tr>';
+    $('#dbxSync').textContent='last sync: '+new Date().toLocaleTimeString();
+    // Trust the durable published AAR if present.
+    if(refAars[focusedAirport]){ aarLimit=refAars[focusedAirport]; paintTrack(lastCum); }
+  }catch(e){ $('#dbxBody').innerHTML='<tr><td colspan="3" style="color:var(--red)">reference unavailable</td></tr>'; }
+}
+
+// Weather (METAR) + Restrictions (TMR) — the other side inputs Continuum joins.
+async function loadWeather(){
+  try{
+    const rows = await (await fetch('/api/faa/reference/weather')).json();
+    const body=$('#wxBody'); if(!body) return; body.innerHTML='';
+    rows.forEach(r=>{
+      const st=r.station_id||'—', cat=r.flight_category||'—';
+      const wind=(r.wind_speed_kt!=null?r.wind_speed_kt+'kt':'—'), vis=(r.visibility_sm!=null?r.visibility_sm:'—');
+      const bad=(cat==='IFR'||cat==='LIFR');
+      const tr=document.createElement('tr'); if(st===focusedAirport) tr.className='me';
+      tr.innerHTML=`<td>${st}</td><td style="color:${bad?'var(--orange)':'var(--green)'}">${cat}</td><td>${wind}</td><td>${vis}</td>`;
+      body.appendChild(tr);
+    });
+    if(!body.children.length) body.innerHTML='<tr><td colspan="4" style="color:var(--muted)">no weather</td></tr>';
+  }catch(e){}
+}
+async function loadRestrictions(){
+  try{
+    const rows = await (await fetch('/api/faa/reference/restrictions')).json();
+    const body=$('#tmrBody'); if(!body) return; body.innerHTML='';
+    rows.forEach(r=>{
+      const tr=document.createElement('tr'); if(r.airport===focusedAirport) tr.className='me';
+      tr.innerHTML=`<td>${r.airport||'—'}</td><td style="color:var(--orange)">${r.restriction_type||'—'}</td><td>${r.reason||'—'}</td>`;
+      body.appendChild(tr);
+    });
+    if(!body.children.length) body.innerHTML='<tr><td colspan="3" style="color:var(--muted)">none active</td></tr>';
+  }catch(e){}
+}
+function loadAllReference(){ loadReference(); loadWeather(); loadRestrictions(); }
+setInterval(loadAllReference, 3000);   // reference side-inputs stream in / update live
+
+// ── Stage 2/3 paint ──
+function bandClass(b){ b=(b||'GREEN').toUpperCase(); return b==='RED'?'r':b==='AMBER'?'a':'g'; }
+// Stage 2 is driven entirely by the polled window (same source as the strip), so the
+// rolling-demand number and the window strip are always the same data and can't diverge.
+function paintStage2(cum, n, util, band){
+  $('#cum').textContent = fmtArr(cum);
+  $('#cum').className = 'bignum '+bandClass(band);
+  $('#util').textContent = util.toFixed(1)+'%';
+  $('#lim').textContent = fmtArr(aarLimit)+' /hr';
+  $('#t60').textContent = n;
+  $('#band').textContent = band;
+  $('#band').style.color = band==='RED'?'var(--red)':band==='AMBER'?'var(--orange)':'var(--green)';
+  const scaleMax = 1.5;   // gauge: utilization within a 150% scale; AAR marker at the 100% point
+  $('#gfill').style.width = Math.min(util/100/scaleMax*100,100)+'%';
+  $('#gfill').style.background = band==='RED'?'var(--red)':band==='AMBER'?'var(--orange)':'var(--green)';
+  $('#glimit').style.left = (1/scaleMax*100)+'%';
+}
+
+function scaleMaxArr(){ return aarLimit*1.5; }
+let lastCum=0;
+function paintTrack(cum){
+  const smax=scaleMaxArr();
+  $('#scaleMax').textContent=fmtArr(smax);
+  $('#mlimit').style.left=(aarLimit/smax*100)+'%';
+  if(cum!=null){
+    const pct=Math.min(cum/smax*100,100);
+    $('#tcum').style.width=pct+'%';
+    $('#tcum').classList.toggle('breach', cum>=aarLimit);
+  }
+}
+function paintFireState(cum){
+  const fs=$('#firestate');
+  if(cum>=aarLimit){ fs.className='firestate'; fs.style.color='var(--red)'; fs.style.borderColor='var(--red)'; fs.textContent='▲ over AAR — '+fmtArr(cum)+' arrivals'; }
+  else { fs.className='firestate armed'; fs.style.color=''; fs.style.borderColor=''; fs.textContent='● armed — '+fmtArr(cum)+' arrivals under AAR'; }
+}
+function runTrigger(cum){
+  lastCum=cum;
+  paintTrack(cum);
+  // deterministic upward-crossing edge-detect at the real published AAR (mirrors capacity breach LAG)
+  const crossed = (cum>=aarLimit && prevCum<aarLimit);
+  prevCum=cum;
+  if(crossed){ fireFlash(cum); return; }   // leave the FIRED flash up until the next update
+  paintFireState(cum);                     // otherwise settle to armed / over-AAR
+}
+function fireFlash(cum){
+  const fs=$('#firestate'); fs.className='firestate fired'; fs.textContent='⚡ TRIGGER FIRED @ '+fmtArr(cum)+' arrivals';
+}
+
+// The window — both the number (Stage 2) and the strip — is Continuum's trailing hour as
+// of NOW (GET /api/faa/demand?airport={airport}). It ages out on bin time: when arrivals stop,
+// bins fall out of the trailing hour and the demand drains to 0 on its own (no reset needed).
+let winReqT=0, resetAt=0;   // resetAt: client cutoff so Reset hides bins booked before it
+async function refreshWindow(){
+  const ap=focusedAirport, t=++winReqT;
+  let rows=[];
+  try{
+    const r=await fetch('/api/faa/demand?airport='+encodeURIComponent(ap));
+    rows=await r.json();
+    if(t!==winReqT || ap!==focusedAirport) return;   // a newer request or airport-switch superseded this
+    rows=Array.isArray(rows)?rows:[];
+  }catch{ return; }
+  if(resetAt) rows=rows.filter(r=>Date.parse((r.bin_start||'')+'Z')>=resetAt);
+  windowRows=rows;
+  // capacity_assessment.demand is ALREADY the rolling-60-min arrival count. The hero
+  // dashboard's gauge shows the PEAK bin (busiest upcoming window), NOT the latest bin
+  // (the far-future tail, fewest flights) — match it so the two screens agree.
+  const peak=rows.reduce((m,r)=> (!m || Number(r.demand||0)>Number(m.demand||0)) ? r : m, null);
+  const cum=peak ? Number(peak.demand||0) : 0;
+  // AAR in effect: prefer the published rate (same /api/faa/rates source as the hero
+  // demo), fall back to the peak bin's live bin_capacity — identical to the dashboard's
+  // `rates[a].aar || capacity`, so the AAR tracks a storm even if rates was stale.
+  aarLimit = (refAars[ap]!=null) ? refAars[ap]
+           : (peak && peak.bin_capacity!=null ? Number(peak.bin_capacity) : aarLimit);
+  const util=aarLimit? cum/aarLimit*100 : 0;
+  const band = cum>=aarLimit ? 'RED' : cum>=0.8*aarLimit ? 'AMBER' : 'GREEN';
+  paintStage2(cum, rows.length, util, band);
+  paintWinBars();
+  runTrigger(cum);
+}
+let winDebounce=null;
+function nudgeWindow(){ clearTimeout(winDebounce); winDebounce=setTimeout(refreshWindow, 300); }  // quick refresh after a focused-airport arrival
+function paintWinBars(){
+  const el=$('#winbars'); el.innerHTML='';
+  const meta=$('#winmeta');
+  const n=windowRows.length;
+  const peak=windowRows.reduce((m,r)=> (!m || Number(r.demand||0)>Number(m.demand||0)) ? r : m, null);
+  const cur=peak ? Number(peak.demand||0) : 0;
+  if(meta) meta.textContent = n ? (n+' bin'+(n>1?'s':'')+' · '+fmtArr(cur)+' arrivals (rolling hr)') : 'empty';
+  if(!n) return;
+  const max=Math.max(...windowRows.map(t=>Number(t.demand||0)),1);
+  windowRows.slice(-40).forEach(t=>{
+    const b=document.createElement('div'); b.className='b '+(t.exceeded?'over':'ok');
+    b.style.height=Math.max(10, Number(t.demand||0)/max*46)+'px'; el.appendChild(b);
+  });
+}
+
+// ── Emit (real governed capacity-breach event) ──
+function onGoverned(ev){
+  breachCount++; $('#emitCount').textContent='×'+breachCount;
+  $('#emit').textContent=JSON.stringify(ev,null,2);
+}
+
+// ── Ingress feed + rate meter ──
+let rateBucket=[], lastFeedT=0;
+function pushIngress(p){
+  const t=Date.now();
+  rateBucket.push(t);                                      // meter counts EVERY arrival update (true rate)
+  if(p.airport===focusedAirport){ nudgeWindow(); }        // Continuum owns the window; just trigger a quick re-poll
+  // Throttle the VISIBLE feed to ~6 rows/s so individual updates are legible as they scroll
+  // (the firehose is fast — showing every row is an unreadable blur).
+  if(t-lastFeedT < 160) return;
+  lastFeedT=t;
+  const demand=Number(p.demand||0);
+  const cap=Number(p.bin_capacity||0);
+  const ap=(p.airport||'');
+  const feed=$('#feed');
+  const row=document.createElement('div'); row.className='tr'+(p.airport===focusedAirport?' me':'');
+  row.innerHTML=`<span class="t-pair">${ap}</span> <span class="t-amt">${demand} arr</span> · <span class="t-cp">cap ${cap}</span> · <span class="t-venue">${p.exceeded?'BREACH':''}</span>`;
+  feed.insertBefore(row, feed.firstChild); while(feed.children.length>12) feed.removeChild(feed.lastChild);
+}
+setInterval(()=>{ const cut=Date.now()-1000; rateBucket=rateBucket.filter(t=>t>=cut); $('#rate').textContent=rateBucket.length; }, 500);
+setInterval(refreshWindow, 1500);   // keep Continuum's window in sync (it ages on bin time, not wall-clock)
+
+// Synthetic volume: the ingress feed + arrivals/sec meter read as live VOLUME (not an
+// authoritative list), so pad them with a steady stream of plausible arrivals. It does
+// NOT nudge the window — the focused airport's live window stays 100% real; only the
+// ambient ticker and rate meter are kept busy.
+const _CI_APORTS=['KMKG','KEWR','KJFK','KLGA','KPHL','KBOS','KORD','KATL','KDCA','KIAD','KBWI'];
+let _ciFeedT=0;
+function synthIngress(){
+  const t=Date.now();
+  for(let k=0;k<2+Math.floor(Math.random()*3);k++) rateBucket.push(t);   // 2–4 → a busy arrivals/sec
+  if(t-_ciFeedT < 150) return;                                           // throttle visible rows to ~6/s
+  _ciFeedT=t;
+  const feed=$('#feed'); if(!feed) return;
+  const ap=_CI_APORTS[Math.floor(Math.random()*_CI_APORTS.length)];
+  const cap=refAars[ap] || (AIRPORTS[ap]&&AIRPORTS[ap].aar) || 30;
+  const demand=Math.max(1, Math.round(cap*(0.4+Math.random()*0.7)));
+  const exceeded=demand>cap;
+  const row=document.createElement('div'); row.className='tr'+(ap===focusedAirport?' me':'');
+  row.innerHTML=`<span class="t-pair">${ap}</span> <span class="t-amt">${demand} arr</span> · <span class="t-cp">cap ${cap}</span> · <span class="t-venue">${exceeded?'BREACH':''}</span>`;
+  feed.insertBefore(row, feed.firstChild); while(feed.children.length>12) feed.removeChild(feed.lastChild);
+}
+(function ingressPump(){ synthIngress(); setTimeout(ingressPump, 70+Math.floor(Math.random()*120)); })();  // ~5–14 ticks/s
+
+// ── MQTT-over-WebSocket (same proxy the hero demo uses) ──
+let mqttUp=false, heroTopics=[];
+function setConn(){ $('#conn').textContent = mqttUp ? 'live · MQTT' : 'connecting…'; }
+const _wsUrl=`${location.protocol==='https:'?'wss':'ws'}://${location.host}/fx/mqtt`;
+const mqttClient=mqtt.connect(_wsUrl,{clientId:'cont-'+Math.random().toString(16).slice(2,8), username:'default', password:'default', clean:true, reconnectPeriod:3000, connectTimeout:8000});
+function subscribeHero(){
+  heroTopics=['fl/faa/arrival-capacity/breach/'+focusedAirport];
+  if(mqttUp) heroTopics.forEach(t=>mqttClient.subscribe(t,{qos:0}));
+}
+mqttClient.on('connect', ()=>{ mqttUp=true; setConn(); mqttClient.subscribe('fl/faa/arrival-capacity/demand/#',{qos:0}); subscribeHero(); });
+mqttClient.on('reconnect', ()=>{ mqttUp=false; setConn(); });
+mqttClient.on('close', ()=>{ mqttUp=false; setConn(); });
+mqttClient.on('error', ()=>{ mqttUp=false; setConn(); });
+mqttClient.on('message', (topic, message)=>{
+  try{
+    if(topic.startsWith('fl/faa/arrival-capacity/breach/')){ let ev; try{ ev=JSON.parse(message.toString()); ev=ev.insert||ev; }catch{ return; } onGoverned(ev); }
+    else if(topic.startsWith('fl/faa/arrival-capacity/demand/')){ let p; try{ p=JSON.parse(message.toString()); }catch{ return; } pushIngress(p); }
+  }catch(e){ console.warn(e); }
+});
+setConn();
+
+// ── Inject helpers (reuse the hero demo's allowlisted endpoints — no backend change) ──
+const nowUtc=(off=0)=>new Date(Date.now()+off*1000).toISOString().slice(0,19).replace('T',' ');  // UTC — avoids the LATENESS watermark drop
+// A real arrival = a flight plan + a near-term ETA — the same SWIM ingest events the
+// feeds publish. Feldera's flight → arrival_demand views pick them up, so the live
+// window (polled from /api/faa/demand) actually climbs. (Publishing to the demand
+// OUTPUT topic would only echo on the ingress feed; it never reaches Continuum.)
+const _CARR=['UAL','AAL','DAL','SWA','JBU'], _ORIG=['KORD','KDTW','KMKE','KGRR','KMSP'];
+function arrivalMsgs(airport){
+  const gufi='CONTINJ'+Date.now().toString(36).toUpperCase()+Math.floor(Math.random()*1000);
+  const cs=_CARR[Math.floor(Math.random()*_CARR.length)]+Math.floor(100+Math.random()*9900);
+  const origin=_ORIG[Math.floor(Math.random()*_ORIG.length)];
+  // Spread 4–49 min out so several overlapping rolling-hour bins go over together —
+  // the governed breach (§8) is anti-flap: it needs the overage SUSTAINED across bins
+  // (or ≥20% of AAR) before it emits, not just a single bin nudging past the rate.
+  const eta=nowUtc(240+Math.floor(Math.random()*2700));
+  return [
+    {topic:`FDPS/flightPlan/${cs}/ACTIVE/${origin}/${airport}/${gufi}`,
+     payload:JSON.stringify({flight_id:cs, status:'ACTIVE', departure:origin, arrival:airport, gufi})},
+    {topic:`TTP/flightData/${gufi}/${airport}/TTPFD`,
+     payload:JSON.stringify({gufi, arrival:airport, eta, eta_source:'TTPFD'})}
+  ];
+}
+// Add a small burst so you can walk cumulative demand up and watch it cross the published AAR.
+async function addArrivals(){
+  const btn=$('#addBtn'); btn.disabled=true; const lbl=btn.textContent; btn.textContent='adding…';
+  const n=Math.max(6, Math.round(aarLimit/4));            // a couple clicks past the AAR → a governed breach
+  const msgs=[]; for(let i=0;i<n;i++) msgs.push(...arrivalMsgs(focusedAirport));
+  try{
+    const r=await fetch('/api/faa/inject/publish-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs})});
+    const j=await r.json(); if(!r.ok || !j.sent) throw new Error('rejected');
+    btn.textContent='✓ added';
+    setTimeout(refreshWindow, 700); setTimeout(refreshWindow, 1600);   // let Feldera ingest + recompute
+  }catch(e){ btn.textContent='✗ failed'; }
+  setTimeout(()=>{ btn.textContent=lbl; btn.disabled=false; }, 900);
+}
+// Reset: instant client-side clear. Sets a cutoff so bins booked before now are hidden;
+// anything still in the trailing hour also drains on its own. No backend write needed.
+function resetAirport(){
+  const btn=$('#resetBtn'); const lbl=btn.textContent; btn.disabled=true; btn.textContent='cleared';
+  resetAt=Date.now(); prevCum=0; windowRows=[];
+  refreshWindow();   // re-poll with the new cutoff → drains to 0
+  setTimeout(()=>{ btn.textContent=lbl; btn.disabled=false; }, 900);
+}
+
+// ── Focus an airport: swap subscriptions, reset state, show its live window ──
+function selectAirport(ap){
+  heroTopics.forEach(t=>{ try{ mqttClient.unsubscribe(t); }catch{} });
+  focusedAirport=ap; aarLimit=refAars[ap]||AIRPORTS[ap].aar;
+  prevCum=0; lastCum=0; windowRows=[]; breachCount=0; resetAt=0;
+  $('#emit').textContent='— waiting for a capacity breach event —'; $('#emitCount').textContent='×0';
+  $('#win-cp').textContent=ap+' · '+AIRPORTS[ap].name;
+  paintTrack(0); refreshWindow();   // show the focused airport's live trailing-hour window
+  // highlight the focused row in the Databricks panel
+  document.querySelectorAll('#dbxBody tr').forEach(tr=>tr.classList.toggle('me', tr.dataset.cp===ap));
+  subscribeHero();
+}
+
+// ── Boot ──
+$('#win-cp').textContent=focusedAirport+' · '+AIRPORTS[focusedAirport].name;
+paintTrack(0); loadAllReference();
+setTimeout(()=>selectAirport(focusedAirport), 400);   // prime the default airport after reference loads
+</script>
+</body>
+</html>

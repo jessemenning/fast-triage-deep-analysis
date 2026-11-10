@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Continuum FAA Arrival Capacity — Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+:root {
+  --dark-blue:    #03213B;
+  --deep-blue:    #093B5F;
+  --classic-green:#00C895;
+  --bright-green: #ABFF88;
+  --orange:       #FCA829;
+  --red:          #FF4444;
+  --sky-blue:     #C2F7FF;
+  --muted-blue:   #7FA8C9;
+  --text:         #E8F4FF;
+  --text-muted:   #7FA8C9;
+  --border:       rgba(0,200,149,0.18);
+  --panel:        rgba(9,59,95,0.55);
+  --font-body:    Figtree, 'Segoe UI', sans-serif;
+  --font-mono:    'Space Mono', 'Cascadia Mono', monospace;
+}
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+html,body { height: 100%; }
+body {
+  background: var(--dark-blue);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── HEADER ──────────────────────────────────────────────────────────────── */
+header {
+  flex-shrink: 0;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  background: linear-gradient(135deg, #03213B 0%, #093B5F 100%);
+  border-bottom: 1px solid var(--border);
+  gap: 16px;
+}
+.brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.brand-mark {
+  width: 28px; height: 28px;
+  background: var(--classic-green);
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+}
+.brand-mark svg { width: 16px; height: 16px; }
+.brand-title {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase;
+}
+.brand-sub { font-size: 10px; color: var(--text-muted); letter-spacing: 0.06em; font-family: var(--font-mono); }
+.header-divider { width: 1px; height: 24px; background: var(--border); flex-shrink: 0; }
+.header-stats { display: flex; gap: 24px; flex: 1; }
+.hstat { display: flex; flex-direction: column; }
+.hstat-label { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+.hstat-value { font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: var(--sky-blue); line-height: 1.2; }
+.hstat-value.orange { color: var(--orange); }
+.hstat-value.green  { color: var(--classic-green); }
+
+/* ── BODY ROW ─────────────────────────────────────────────────────────────── */
+.body-row {
+  flex: 1;
+  display: flex; overflow: hidden;
+}
+
+/* ── SIDEBAR ─────────────────────────────────────────────────────────────── */
+.sidebar {
+  width: 260px; flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow-y: auto; padding: 14px 12px; gap: 14px;
+}
+.sidebar::-webkit-scrollbar { width: 3px; }
+.sidebar::-webkit-scrollbar-thumb { background: rgba(0,200,149,0.25); border-radius: 2px; }
+.panel-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--classic-green); opacity: 0.85; margin-bottom: 8px; }
+.scorer-mini { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; }
+.scorer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+.smetric { display: flex; flex-direction: column; gap: 2px; }
+.smetric-label { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+.smetric-value { font-family: var(--font-mono); font-size: 18px; font-weight: 700; color: var(--sky-blue); line-height: 1; }
+.smetric-value.green  { color: var(--classic-green); }
+.smetric-value.orange { color: var(--orange); }
+.smetric-denom { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); }
+.sidebar-sep { height: 1px; background: var(--border); }
+.filter-group { display: flex; flex-direction: column; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.chip {
+  font-family: var(--font-mono); font-size: 10px;
+  padding: 3px 10px; border-radius: 20px;
+  border: 1px solid var(--border); color: var(--text-muted);
+  cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s; user-select: none;
+}
+.chip:hover { background: rgba(0,200,149,0.1); color: var(--classic-green); border-color: var(--classic-green); }
+.chip.active { background: rgba(0,200,149,0.18); color: var(--classic-green); border-color: var(--classic-green); }
+
+/* ── MAIN TAB AREA ────────────────────────────────────────────────────────── */
+.tab-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.tab-bar {
+  flex-shrink: 0; height: 40px;
+  display: flex; align-items: stretch;
+  border-bottom: 1px solid var(--border);
+  background: rgba(3,33,59,0.6);
+}
+.tab-btn {
+  display: flex; align-items: center; gap: 7px;
+  padding: 0 20px; border: none; background: transparent;
+  color: var(--text-muted); font-family: var(--font-mono);
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  cursor: pointer; border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--classic-green); border-bottom-color: var(--classic-green); }
+.mqtt-tab-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; transition: background 0.3s; }
+.tab-badge { background: rgba(252,168,41,0.2); color: var(--orange); border: 1px solid rgba(252,168,41,0.35); border-radius: 10px; font-size: 9px; padding: 1px 6px; font-family: var(--font-mono); }
+.tab-content { flex: 1; overflow: hidden; display: none; flex-direction: column; }
+.tab-content.active { display: flex; }
+
+/* ── MANAGEMENT TAB: internal sub-tabs ───────────────────────────────────── */
+.mgmt-sub-bar {
+  flex-shrink: 0; height: 34px;
+  display: flex; align-items: stretch;
+  border-bottom: 1px solid var(--border);
+  background: rgba(3,33,59,0.4);
+  padding: 0 8px;
+}
+.sub-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 14px; border: none; background: transparent;
+  color: var(--text-muted); font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase;
+  cursor: pointer; border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+.sub-btn:hover { color: var(--text); }
+.sub-btn.active { color: var(--classic-green); border-bottom-color: var(--classic-green); }
+.sub-content { flex: 1; overflow: hidden; display: none; flex-direction: column; }
+.sub-content.active { display: flex; }
+.tab-scroll { flex: 1; overflow-y: auto; padding: 14px 16px; }
+.tab-scroll::-webkit-scrollbar { width: 4px; }
+.tab-scroll::-webkit-scrollbar-thumb { background: rgba(0,200,149,0.25); border-radius: 2px; }
+
+/* ── CASE QUEUE TABLE ────────────────────────────────────────────────────── */
+.rtable-wrap { overflow-x: auto; }
+table.rtable { border-collapse: collapse; font-family: var(--font-mono); font-size: 11px; width: 100%; min-width: 1100px; }
+table.rtable th { background: rgba(9,59,95,0.95); color: var(--text-muted); text-transform: uppercase; font-size: 9px; letter-spacing: 0.07em; padding: 7px 10px; text-align: left; position: sticky; top: 18px; z-index: 2; border-bottom: 1px solid var(--border); white-space: nowrap; }
+table.rtable td { padding: 6px 10px; border-bottom: 1px solid rgba(127,168,201,0.07); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+/* Two-row sticky header: group labels on top, column names below */
+table.rtable thead tr:first-child th {
+  top: 0; z-index: 3; padding: 3px 10px 1px; font-size: 8px; letter-spacing: 0.12em; border-bottom: none;
+}
+.th-group-event     { color: var(--text-muted); border-top: 2px solid rgba(127,168,201,0.3); }
+.th-group-scorer    { color: var(--orange);      border-top: 2px solid rgba(252,168,41,0.45); }
+.th-group-continuum { color: var(--classic-green); border-top: 2px solid var(--classic-green); }
+/* Continuum column highlight */
+th.col-continuum { background: rgba(0,200,149,0.07) !important; color: var(--classic-green) !important; }
+td.td-continuum  { background: rgba(0,200,149,0.04); }
+/* Enrichment cell states */
+.enrich-loading { color: rgba(0,200,149,0.3); font-size: 10px; animation: pulse-opacity 1.5s ease-in-out infinite; }
+.enrich-name    { color: var(--classic-green); }
+.enrich-seg     { color: var(--text-muted); font-size: 9px; }
+table.rtable tr:hover td { background: rgba(0,200,149,0.04); }
+tr.row-new td { animation: row-flash 0.5s ease forwards; }
+@keyframes row-flash { 0% { background: rgba(0,200,149,0.12); } 100% { background: transparent; } }
+.amount-cell { color: var(--orange); text-align: right; }
+.score-cell { text-align: center; }
+.score-lo { color: var(--text-muted); } .score-md { color: var(--orange); } .score-hi { color: var(--red); }
+.signal-chip { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 9px; letter-spacing: 0.05em; border: 1px solid; }
+.signal-trusted  { color: var(--classic-green); border-color: rgba(0,200,149,0.4); background: rgba(0,200,149,0.08); }
+.signal-watch    { color: var(--orange); border-color: rgba(252,168,41,0.4); background: rgba(252,168,41,0.08); }
+.signal-other    { color: var(--text-muted); border-color: rgba(127,168,201,0.3); }
+.codes-cell { display: flex; gap: 3px; flex-wrap: wrap; }
+.code-chip { font-size: 9px; padding: 1px 6px; border-radius: 8px; background: rgba(9,59,95,0.8); border: 1px solid rgba(127,168,201,0.2); color: var(--text-muted); }
+.age-cell { color: var(--text-muted); text-align: right; }
+.empty-state { display: flex; align-items: center; justify-content: center; height: 120px; color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; animation: pulse-opacity 1.8s ease-in-out infinite; }
+@keyframes pulse-opacity { 0%,100%{opacity:1} 50%{opacity:0.35} }
+
+/* ── AIRPORT DEMAND ───────────────────────────────────────────────────────── */
+.rail-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.rail-card { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 10px 10px 8px; display: flex; flex-direction: column; gap: 6px; transition: border-color 0.2s; }
+.rail-card:hover { border-color: rgba(0,200,149,0.35); }
+.rail-card-header { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+.rail-bar-track { height: 4px; background: rgba(127,168,201,0.12); border-radius: 2px; overflow: hidden; }
+.rail-bar-fill { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
+.bar-green { background: var(--classic-green); } .bar-orange { background: var(--orange); } .bar-red { background: var(--red); } .bar-muted { background: var(--text-muted); }
+.rail-stats { display: flex; align-items: baseline; gap: 6px; }
+.rail-inflight { font-family: var(--font-mono); font-size: 18px; font-weight: 700; color: var(--text); line-height: 1; }
+.rail-pct { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
+.action-badge { display: inline-block; font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.07em; text-transform: uppercase; padding: 2px 6px; border-radius: 8px; border: 1px solid; align-self: flex-start; }
+.badge-monitor  { color: var(--text-muted); border-color: rgba(127,168,201,0.25); }
+.badge-reroute  { color: var(--orange); border-color: rgba(252,168,41,0.4); background: rgba(252,168,41,0.06); }
+.badge-throttle { color: var(--red); border-color: rgba(255,68,68,0.4); background: rgba(255,68,68,0.06); }
+
+/* ── PUBLISHED RATES ──────────────────────────────────────────────────────────── */
+.scorer-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 20px 24px; max-width: 520px; margin: 0 auto; }
+.scorer-model-id { font-family: var(--font-mono); font-size: 13px; font-weight: 700; letter-spacing: 0.06em; color: var(--classic-green); display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--classic-green); animation: pulse-dot 1.5s ease-in-out infinite; flex-shrink: 0; }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.scorer-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.metric-block { display: flex; flex-direction: column; gap: 4px; }
+.metric-label { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+.metric-value { font-family: var(--font-mono); font-size: 28px; font-weight: 700; color: var(--sky-blue); line-height: 1; }
+.metric-value.green  { color: var(--classic-green); }
+.metric-value.orange { color: var(--orange); }
+.metric-value.red    { color: var(--red); }
+.metric-sub { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px; }
+.latency-bar-wrap { margin-top: 6px; }
+.latency-bar-track { height: 3px; background: rgba(127,168,201,0.12); border-radius: 2px; }
+.latency-bar-fill  { height: 100%; border-radius: 2px; transition: width 0.4s, background 0.4s; }
+.scorer-footer { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); display: flex; justify-content: space-between; }
+
+/* ── MAP TAB ─────────────────────────────────────────────────────────────── */
+.map-layout { flex: 1; display: flex; overflow: hidden; }
+.map-svg-wrap {
+  flex: 0 0 58%;
+  display: flex; align-items: center; justify-content: center;
+  padding: 12px; overflow: hidden;
+}
+.map-svg-wrap svg { max-width: 100%; max-height: 100%; }
+.aus-state {
+  fill: rgba(9,59,95,0.55);
+  stroke: rgba(0,200,149,0.25);
+  stroke-width: 1.2;
+  cursor: pointer;
+  transition: fill 0.2s, stroke 0.2s;
+}
+.aus-state:hover { fill: rgba(0,200,149,0.08); stroke: rgba(0,200,149,0.5); }
+.aus-state.selected { fill: rgba(0,200,149,0.12); stroke: #00C895; stroke-width: 1.8; }
+.aus-state.muted { fill: rgba(9,59,95,0.25); stroke: rgba(127,168,201,0.12); cursor: default; }
+.aus-state.muted:hover { fill: rgba(9,59,95,0.25); stroke: rgba(127,168,201,0.12); }
+.state-label { font-family: var(--font-mono); font-size: 9px; fill: rgba(127,168,201,0.7); pointer-events: none; text-anchor: middle; }
+.state-count { font-family: var(--font-mono); font-size: 11px; font-weight: 700; fill: var(--classic-green); pointer-events: none; text-anchor: middle; }
+.pulse-circle { pointer-events: none; }
+.map-side {
+  flex: 1;
+  display: flex; flex-direction: column;
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+}
+.map-side-header {
+  flex-shrink: 0; padding: 10px 14px 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.map-side-title { font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.07em; color: var(--text); }
+.map-open-btn {
+  font-family: var(--font-mono); font-size: 10px;
+  padding: 4px 12px; border-radius: 4px;
+  background: rgba(0,200,149,0.1); color: var(--classic-green);
+  border: 1px solid rgba(0,200,149,0.35);
+  cursor: pointer; text-decoration: none;
+  transition: background 0.15s; display: none;
+}
+.map-open-btn:hover { background: rgba(0,200,149,0.2); }
+.map-open-btn.visible { display: inline-flex; align-items: center; gap: 5px; }
+.map-event-log { flex: 1; overflow-y: auto; font-family: var(--font-mono); font-size: 11px; }
+.map-event-log::-webkit-scrollbar { width: 3px; }
+.map-event-log::-webkit-scrollbar-thumb { background: rgba(0,200,149,0.2); }
+.map-row {
+  padding: 5px 14px;
+  border-bottom: 1px solid rgba(127,168,201,0.06);
+  display: grid;
+  grid-template-columns: 58px 48px 70px 80px 1fr;
+  gap: 8px; align-items: center;
+}
+.map-row.new-row { animation: row-flash 0.4s ease forwards; }
+.map-ts { color: var(--text-muted); font-size: 10px; }
+.map-rail { color: var(--text); }
+.map-amount { color: var(--orange); text-align: right; }
+.map-region { color: var(--text-muted); font-size: 10px; }
+.decision-badge { display: inline-block; font-size: 9px; padding: 1px 7px; border-radius: 10px; border: 1px solid; }
+.dec-approve { color: var(--classic-green); border-color: rgba(0,200,149,0.4); background: rgba(0,200,149,0.07); }
+.dec-review  { color: var(--orange); border-color: rgba(252,168,41,0.4); background: rgba(252,168,41,0.07); }
+.dec-decline { color: var(--red); border-color: rgba(255,68,68,0.4); background: rgba(255,68,68,0.07); }
+
+/* ── ICEBERG TAB ─────────────────────────────────────────────────────────── */
+.iceberg-wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.iceberg-card { background: var(--panel); border: 1px solid rgba(194,247,255,0.2); border-radius: 8px; padding: 24px 28px; width: 100%; max-width: 560px; }
+.iceberg-header { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+.iceberg-title { font-family: var(--font-mono); font-size: 14px; font-weight: 700; letter-spacing: 0.08em; color: var(--sky-blue); }
+.iceberg-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--sky-blue); flex-shrink: 0; }
+.iceberg-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; margin-bottom: 16px; }
+.imeta-block { display: flex; flex-direction: column; gap: 3px; }
+.imeta-label { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+.imeta-value { font-family: var(--font-mono); font-size: 15px; font-weight: 700; }
+.imeta-value.sky { color: var(--sky-blue); }
+.stub-badge { display: inline-block; font-family: var(--font-mono); font-size: 10px; padding: 3px 12px; border-radius: 4px; background: rgba(252,168,41,0.1); color: var(--orange); border: 1px solid rgba(252,168,41,0.35); margin-bottom: 16px; }
+.iceberg-sql {
+  background: rgba(3,33,59,0.8); border: 1px solid rgba(127,168,201,0.15);
+  border-radius: 4px; padding: 10px 12px;
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--text-muted); line-height: 1.6;
+  white-space: pre; overflow-x: auto;
+}
+.iceberg-sql .kw { color: var(--sky-blue); }
+.iceberg-sql .cm { color: rgba(127,168,201,0.45); }
+
+/* ── STATUS BAR ──────────────────────────────────────────────────────────── */
+.status-bar {
+  flex-shrink: 0; height: 28px;
+  border-top: 1px solid var(--border);
+  background: rgba(3,33,59,0.8);
+  display: flex; align-items: center; padding: 0 16px; gap: 16px;
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+}
+.conn-indicator { display: flex; align-items: center; gap: 5px; }
+.conn-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.conn-dot.live         { background: var(--classic-green); animation: pulse-dot 1.5s infinite; }
+.conn-dot.reconnecting { background: var(--orange); animation: pulse-dot 0.7s infinite; }
+.conn-dot.stale        { background: var(--red); }
+.status-sep { color: rgba(127,168,201,0.3); }
+
+/* ── DETAIL SIDE PANEL ───────────────────────────────────────────────────── */
+#detail-panel {
+  position: fixed;
+  right: 0; top: 48px; bottom: 28px;
+  width: 300px;
+  background: #03213B;
+  border-left: 2px solid #00C895;
+  z-index: 300;
+  transform: translateX(100%);
+  transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
+  overflow-y: auto;
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  color: #C2F7FF;
+  box-shadow: -4px 0 24px rgba(0,200,149,0.12);
+}
+#detail-panel.dp-open { transform: translateX(0); }
+.dp-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px 6px;
+  border-bottom: 1px solid rgba(0,200,149,0.3);
+}
+.dp-title { color: #00C895; font-size: 11px; letter-spacing: 0.08em; }
+.dp-close {
+  background: none; border: 1px solid #FCA829; color: #FCA829;
+  cursor: pointer; font-size: 11px; padding: 2px 7px; border-radius: 3px;
+  line-height: 1;
+}
+.dp-close:hover { background: rgba(252,168,41,0.15); }
+.dp-timer-bar { height: 3px; background: rgba(0,200,149,0.2); overflow: hidden; }
+#dp-timer-fill { height: 100%; width: 100%; background: #00C895; }
+#dp-body { padding: 12px 14px; }
+.dp-field { margin-bottom: 10px; }
+.dp-label {
+  color: #FCA829; font-size: 10px; letter-spacing: 0.1em;
+  display: block; margin-bottom: 2px; text-transform: uppercase;
+}
+.dp-value { color: #C2F7FF; word-break: break-all; line-height: 1.5; }
+.dp-badge {
+  display: inline-block; padding: 2px 10px; border-radius: 3px;
+  font-size: 10px; font-weight: bold; letter-spacing: 0.12em;
+}
+.dp-REVIEW  { background: #FCA829; color: #03213B; }
+.dp-APPROVE { background: #00C895; color: #03213B; }
+.dp-DECLINE { background: #e55555; color: #fff; }
+.dp-section {
+  color: #00C895; font-size: 9px; letter-spacing: 0.15em; font-weight: bold;
+  margin: 12px 0 6px; border-bottom: 1px solid rgba(0,200,149,0.2); padding-bottom: 3px;
+}
+
+/* ── SHARED UTILITIES ────────────────────────────────────────────────────── */
+.smetric-row { display: flex; align-items: baseline; gap: 4px; }
+.map-placeholder { padding: 20px 14px; color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; animation: pulse-opacity 1.8s infinite; }
+#dot-tooltip {
+  display: none; position: fixed; z-index: 9999;
+  background: #03213B; border: 1px solid #FCA829; border-radius: 6px;
+  padding: 10px 14px; font-family: 'Space Mono',monospace; font-size: 11px;
+  color: #FCA829; max-width: 440px; white-space: pre-wrap; pointer-events: none;
+  line-height: 1.5; box-shadow: 0 4px 24px rgba(252,168,41,0.18);
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="brand">
+    <div class="brand-mark">
+      <svg viewBox="0 0 16 16" fill="none" stroke="#03213B" stroke-width="2" stroke-linecap="round">
+        <circle cx="8" cy="8" r="5"/><path d="M8 3v5l3 2"/>
+      </svg>
+    </div>
+    <div>
+      <div class="brand-title">Continuum FAA Arrival Capacity</div>
+      <div class="brand-sub">Dashboard</div>
+    </div>
+  </div>
+  <div class="header-divider"></div>
+  <div class="header-stats">
+    <div class="hstat"><span class="hstat-label">Demand</span><span class="hstat-value" id="h-inflight">—</span></div>
+    <div class="hstat"><span class="hstat-label">Breaches</span><span class="hstat-value orange" id="h-review">—</span></div>
+    <div class="hstat"><span class="hstat-label">Airports</span><span class="hstat-value green" id="h-scored">—</span></div>
+    <div class="hstat"><span class="hstat-label">EWR AAR</span><span class="hstat-value" id="h-latency">—</span></div>
+  </div>
+  <a href="./demo.html" target="_blank" style="font-family:var(--font-mono);font-size:11px;color:var(--classic-green);text-decoration:none;border:1px solid rgba(0,200,149,0.35);padding:4px 14px;border-radius:4px;letter-spacing:0.06em;white-space:nowrap;flex-shrink:0;transition:background 0.15s;" onmouseover="this.style.background='rgba(0,200,149,0.1)'" onmouseout="this.style.background=''">Continuum Demo →</a>
+  <a href="./monitor.html" target="_blank" style="font-family:var(--font-mono);font-size:11px;color:var(--classic-green);text-decoration:none;border:1px solid rgba(0,200,149,0.35);padding:4px 14px;border-radius:4px;letter-spacing:0.06em;white-space:nowrap;flex-shrink:0;transition:background 0.15s;" onmouseover="this.style.background='rgba(0,200,149,0.1)'" onmouseout="this.style.background=''">Live Monitor →</a>
+</header>
+
+<!-- BODY -->
+<div class="body-row">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="scorer-mini">
+      <div class="panel-label">Published Rates</div>
+      <div class="scorer-grid">
+        <div class="smetric"><div class="smetric-label">EWR AAR</div><div class="smetric-value" id="s-scored">—</div></div>
+        <div class="smetric"><div class="smetric-label">EWR ADR</div><div class="smetric-value green" id="s-avg">—</div></div>
+        <div class="smetric" style="grid-column:1/-1">
+          <div class="smetric-label">Runway Config</div>
+          <div class="smetric-row">
+            <div class="smetric-value orange" id="s-overbudget" style="font-size:13px">—</div>
+            <div class="smetric-denom" id="s-overbudget-denom"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- TAB AREA -->
+  <div class="tab-area">
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="management">Management</button>
+      <button class="tab-btn" data-tab="map">
+        <span class="mqtt-tab-dot" id="mqtt-tab-dot"></span>
+        Map
+      </button>
+      <button class="tab-btn" data-tab="iceberg">Iceberg</button>
+    </div>
+
+    <!-- ── MANAGEMENT TAB ─────────────────────────────────────────────────── -->
+    <div class="tab-content active" data-tab="management">
+      <div class="mgmt-sub-bar">
+        <button class="sub-btn active" data-sub="case-queue">
+          Capacity Breaches <span class="tab-badge" id="queue-badge">0</span>
+        </button>
+        <button class="sub-btn" data-sub="rail-health">Airport Demand</button>
+        <button class="sub-btn" data-sub="scorer">Published Rates</button>
+      </div>
+
+      <!-- Case Queue -->
+      <div class="sub-content active" data-sub="case-queue">
+        <div class="tab-scroll">
+          <div class="rtable-wrap">
+            <table class="rtable">
+              <thead>
+                <tr>
+                  <th class="th-group-event"    colspan="6">From Solace Event</th>
+                  <th class="th-group-continuum" colspan="3">Added by Continuum</th>
+                </tr>
+                <tr>
+                  <th>Airport</th><th>Name</th><th>Severity</th><th>Bin Window</th>
+                  <th style="text-align:center">Demand</th>
+                  <th style="text-align:center">Capacity</th>
+                  <th class="col-continuum" style="text-align:center">Overage</th>
+                  <th class="col-continuum">Weather</th>
+                  <th class="col-continuum">Restriction</th>
+                </tr>
+              </thead>
+              <tbody id="queue-tbody"></tbody>
+            </table>
+            <div class="empty-state" id="queue-empty">Awaiting capacity breaches …</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Airport Demand -->
+      <div class="sub-content" data-sub="rail-health">
+        <div class="tab-scroll">
+          <div class="rail-grid" id="rail-grid"></div>
+        </div>
+      </div>
+
+      <!-- Published Rates -->
+      <div class="sub-content" data-sub="scorer">
+        <div class="tab-scroll">
+          <div class="scorer-card" id="scorer-card">
+            <div class="scorer-model-id">
+              <div class="live-dot" id="scorer-live-dot" style="background:var(--text-muted);animation:none"></div>
+              <span id="scorer-model-label">Waiting for data…</span>
+            </div>
+            <div class="scorer-metrics">
+              <div class="metric-block"><div class="metric-label">Published AAR</div><div class="metric-value" id="m-scored">—</div><div class="metric-sub">arrivals / hr</div></div>
+              <div class="metric-block">
+                <div class="metric-label">Departure Rate (ADR)</div>
+                <div class="metric-value green" id="m-avg">—</div>
+                <div class="latency-bar-wrap"><div class="latency-bar-track"><div class="latency-bar-fill" id="m-avg-bar" style="width:0%"></div></div></div>
+                <div class="metric-sub" id="m-avg-sub"></div>
+              </div>
+              <div class="metric-block"><div class="metric-label">Runway Config</div><div class="metric-value orange" id="m-max" style="font-size:18px">—</div><div class="metric-sub">active</div></div>
+              <div class="metric-block"><div class="metric-label">Airports Published</div><div class="metric-value" id="m-overbudget">—</div><div class="metric-sub" id="m-overbudget-pct"></div></div>
+            </div>
+            <div class="scorer-footer">
+              <span>Valid from</span><span id="scorer-last-ts">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /management -->
+
+    <!-- ── MAP TAB ────────────────────────────────────────────────────────── -->
+    <div class="tab-content" data-tab="map">
+      <div class="map-layout">
+
+        <!-- ANZ SVG MAP -->
+        <div class="map-svg-wrap">
+          <svg id="mapSvg" viewBox="0 0 700 650" xmlns="http://www.w3.org/2000/svg">
+            <!-- NT (muted) -->
+            <polygon class="aus-state muted" data-region="" points="260,55 260,335 415,335 415,55"/>
+            <!-- WA -->
+            <polygon class="aus-state" data-region="AU-WA" id="state-AU-WA" points="10,90 10,525 260,525 260,90"/>
+            <!-- SA -->
+            <polygon class="aus-state" data-region="AU-SA" id="state-AU-SA" points="260,335 260,570 435,600 465,570 465,335"/>
+            <!-- QLD (SW dogleg) -->
+            <polygon class="aus-state" data-region="AU-QLD" id="state-AU-QLD" points="415,55 415,335 465,335 465,390 690,390 690,55"/>
+            <!-- NSW -->
+            <polygon class="aus-state" data-region="AU-NSW" id="state-AU-NSW" points="465,390 465,490 665,490 690,390"/>
+            <!-- VIC -->
+            <polygon class="aus-state" data-region="AU-VIC" id="state-AU-VIC" points="465,490 465,575 610,575 665,490"/>
+            <!-- TAS (muted) -->
+            <polygon class="aus-state muted" data-region="" points="505,600 505,650 575,650 575,600"/>
+            <!-- ACT (muted, tiny) -->
+            <polygon class="aus-state muted" data-region="" points="568,478 568,492 584,492 584,478"/>
+            <!-- Labels -->
+            <text class="state-label" x="135" y="305">WA</text>
+            <text class="state-label" x="338" y="192">NT</text>
+            <text class="state-label" x="363" y="452">SA</text>
+            <text class="state-label" x="553" y="218">QLD</text>
+            <text class="state-label" x="578" y="438">NSW</text>
+            <text class="state-label" x="545" y="533">VIC</text>
+            <text class="state-label" x="540" y="625">TAS</text>
+            <!-- Event count labels (updated live) -->
+            <text class="state-count" id="cnt-AU-WA"  x="135" y="320"></text>
+            <text class="state-count" id="cnt-AU-SA"  x="363" y="468"></text>
+            <text class="state-count" id="cnt-AU-QLD" x="553" y="234"></text>
+            <text class="state-count" id="cnt-AU-NSW" x="578" y="454"></text>
+            <text class="state-count" id="cnt-AU-VIC" x="545" y="549"></text>
+            <!-- Pulse animations injected here -->
+            <g id="pulseLayer"></g>
+          </svg>
+        </div>
+
+        <!-- SIDE PANEL -->
+        <div class="map-side">
+          <div class="map-side-header">
+            <span class="map-side-title" id="map-side-title">ALL STATES</span>
+            <a class="map-open-btn" id="map-thin-btn" href="#" target="_blank">
+              Open Thin Client →
+            </a>
+          </div>
+          <div class="map-event-log" id="map-log">
+            <div class="map-placeholder">Connecting to Solace via MQTT-WS…</div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /map -->
+
+    <!-- ── ICEBERG TAB ─────────────────────────────────────────────────────── -->
+    <div class="tab-content" data-tab="iceberg">
+      <div class="iceberg-wrap">
+        <div class="iceberg-card">
+          <div class="iceberg-header">
+            <div class="iceberg-dot"></div>
+            <div class="iceberg-title">ICEBERG SINK</div>
+          </div>
+          <div class="stub-badge">STUB — awaiting catalog connection</div>
+          <div class="iceberg-meta">
+            <div class="imeta-block">
+              <div class="imeta-label">Sink name</div>
+              <div class="imeta-value sky">arrival_capacity_iceberg_sink</div>
+            </div>
+            <div class="imeta-block">
+              <div class="imeta-label">Target table</div>
+              <div class="imeta-value sky">faa.arrival_capacity</div>
+            </div>
+            <div class="imeta-block">
+              <div class="imeta-label">Partition</div>
+              <div class="imeta-value sky">airport / bin</div>
+            </div>
+            <div class="imeta-block">
+              <div class="imeta-label">Rows eligible</div>
+              <div class="imeta-value sky" id="iceberg-rows">—</div>
+            </div>
+          </div>
+          <div class="iceberg-sql"><span class="cm">-- Activate by providing ICEBERG_CATALOG_URL</span>
+<span class="kw">CREATE SINK</span> arrival_capacity_iceberg_sink
+  <span class="kw">IN CLUSTER</span> compute
+  <span class="kw">FROM</span> breach_context_mv
+  <span class="kw">INTO ICEBERG CONNECTION</span> iceberg_conn (
+    TABLE      = <span style="color:#ABFF88">'faa.arrival_capacity'</span>,
+    <span class="kw">PARTITION BY</span> (airport, bin_start)
+  );</div>
+        </div>
+      </div>
+    </div><!-- /iceberg -->
+
+  </div><!-- /tab-area -->
+</div><!-- /body-row -->
+
+<!-- STATUS BAR -->
+<div class="status-bar">
+  <div class="conn-indicator">
+    <div class="conn-dot stale" id="conn-dot"></div>
+    <span id="conn-label">Connecting…</span>
+  </div>
+  <span class="status-sep">|</span>
+  <div class="conn-indicator">
+    <div class="conn-dot stale" id="mqtt-conn-dot"></div>
+    <span id="mqtt-conn-label">MQTT-WS</span>
+  </div>
+  <span class="status-sep">|</span>
+  <span id="status-last">No events yet</span>
+  <span class="status-sep">|</span>
+  <span id="status-events">0 events</span>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════════════════
+const caseMap = new Map();
+const railMap = new Map();
+let   eventTotal = 0;
+let   selectedRegion = null;
+let   mqttConnected  = false;
+const mapCounts = {};
+const mapLog    = [];
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB SWITCHING
+// ═══════════════════════════════════════════════════════════════════════════════
+function activateTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.dataset.tab === name));
+}
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  if (btn.dataset.tab) btn.addEventListener('click', () => { activateTab(btn.dataset.tab); });
+});
+
+// Sub-tabs (Management)
+document.querySelectorAll('.sub-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const sub = btn.dataset.sub;
+    document.querySelectorAll('.sub-btn').forEach(b => b.classList.toggle('active', b.dataset.sub === sub));
+    document.querySelectorAll('.sub-content').forEach(c => c.classList.toggle('active', c.dataset.sub === sub));
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+function fmtAge(isoStr) {
+  if (!isoStr) return '—';
+  const diff = (Date.now() - new Date(isoStr.endsWith('Z') ? isoStr : isoStr + 'Z').getTime()) / 1000;
+  if (diff < 60)   return Math.round(diff) + 's';
+  if (diff < 3600) return Math.round(diff/60) + 'm';
+  return Math.round(diff/3600) + 'h';
+}
+function fmtAmount(v) { return v != null ? Number(v).toLocaleString() : '—'; }
+function fmtRegion(r) { return (r || '—').replace('AU-', ''); }
+function fmtTimestamp(iso) { return iso ? new Date(iso).toLocaleTimeString() : '—'; }
+function fmtBin(a, b) { return (a || b) ? `${fmtTimestamp(a)}–${fmtTimestamp(b)}` : '—'; }
+
+function scoreClass(v) { if (v==null) return 'score-lo'; if (v>=750) return 'score-hi'; if (v>=500) return 'score-md'; return 'score-lo'; }
+function signalChip(s) {
+  if (!s) return '—';
+  const cls = s.toLowerCase().includes('trusted') ? 'signal-trusted' : s.toLowerCase().includes('watch') ? 'signal-watch' : 'signal-other';
+  return `<span class="signal-chip ${cls}">${s}</span>`;
+}
+function renderCodes(raw) {
+  if (!raw) return '';
+  let codes; try { codes = JSON.parse(raw); } catch { return raw; }
+  if (!Array.isArray(codes)) return raw;
+  const shown = codes.slice(0,2).map(c=>`<span class="code-chip">${c}</span>`).join('');
+  const extra = codes.length>2 ? `<span class="code-chip">+${codes.length-2}</span>` : '';
+  return `<div class="codes-cell">${shown}${extra}</div>`;
+}
+function latencyColor(ms) { if (ms==null) return 'green'; if (ms>=50) return 'red'; if (ms>=30) return 'orange'; return 'green'; }
+function barClass(s) { if (!s) return 'bar-muted'; const u=s.toUpperCase(); if (u==='CRITICAL') return 'bar-red'; if (u==='STRAINED') return 'bar-orange'; if (u==='HEALTHY') return 'bar-green'; return 'bar-muted'; }
+function badgeClass(a) { if (!a) return 'badge-monitor'; const u=a.toUpperCase(); if (u==='THROTTLE') return 'badge-throttle'; if (u==='REROUTE') return 'badge-reroute'; return 'badge-monitor'; }
+function decisionBadgeClass(d) { if (!d) return 'dec-approve'; const u=d.toUpperCase(); if (u==='REVIEW') return 'dec-review'; if (u==='DECLINE') return 'dec-decline'; return 'dec-approve'; }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONTINUUM ENRICHMENT RENDERERS
+// Breach events are self-contained: the weather + active-restriction columns
+// (added by Continuum via CDC joins) arrive on the same event as the breach, so
+// each cell renders straight from the row — no cache, no per-row fetch, no join.
+// ═══════════════════════════════════════════════════════════════════════════════
+function renderEnrichWeather(d) {
+  const cond = d.wx_condition || '—';
+  const parts = [];
+  if (d.wx_ceiling_ft != null)    parts.push(d.wx_ceiling_ft + ' ft');
+  if (d.wx_visibility_mi != null) parts.push(d.wx_visibility_mi + ' mi');
+  if (d.wx_wind_kt != null)       parts.push(d.wx_wind_kt + ' kt');
+  const seg = parts.length ? `<br><span class="enrich-seg">${parts.join(' · ')}</span>` : '';
+  return `<span class="enrich-name">${cond}</span>${seg}`;
+}
+
+function renderEnrichRestriction(d) {
+  const type = d.active_restriction_type || '—';
+  const seg  = d.active_restriction_reason ? `<br><span class="enrich-seg">${d.active_restriction_reason}</span>` : '';
+  return `<span class="enrich-name">${type}</span>${seg}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CASE QUEUE RENDER
+// ═══════════════════════════════════════════════════════════════════════════════
+const tbody     = document.getElementById('queue-tbody');
+const emptyState= document.getElementById('queue-empty');
+
+function breachKey(d) { return d.airport ? d.airport + ':' + (d.bin_start || '') : null; }
+
+function renderCaseQueue() {
+  const rows = [...caseMap.values()]
+    .sort((a,b) => (b.data.bin_start||'').localeCompare(a.data.bin_start||''));
+
+  document.getElementById('queue-badge').textContent = rows.length;
+  document.getElementById('h-review').textContent    = rows.length;
+  emptyState.style.display = rows.length === 0 ? 'flex' : 'none';
+  tbody.style.display      = rows.length === 0 ? 'none' : '';
+
+  const incoming = new Set(rows.map(e=>breachKey(e.data)));
+  tbody.querySelectorAll('tr').forEach(r => { if (!incoming.has(r.dataset.id)) r.remove(); });
+
+  rows.forEach(({data,isNew}) => {
+    const key = breachKey(data);
+    let row = tbody.querySelector(`tr[data-id="${CSS.escape(key)}"]`);
+    if (!row) {
+      row = document.createElement('tr'); row.dataset.id = key;
+      if (isNew) row.classList.add('row-new');
+      tbody.prepend(row);
+    }
+    const overEl = data.overage > 0 ? `<span class="score-hi">+${data.overage}</span>` : (data.overage ?? '—');
+    row.innerHTML = `
+      <td>${data.airport||'—'}</td>
+      <td style="color:var(--text-muted);font-size:10px">${data.airport_name||'—'}</td>
+      <td>${data.severity||'—'}</td>
+      <td style="color:var(--text-muted);font-size:10px">${fmtBin(data.bin_start, data.bin_end)}</td>
+      <td class="score-cell">${data.demand ?? '—'}</td>
+      <td class="score-cell">${data.bin_capacity ?? '—'}</td>
+      <td class="td-continuum score-cell">${overEl}</td>
+      <td class="td-continuum">${renderEnrichWeather(data)}</td>
+      <td class="td-continuum">${renderEnrichRestriction(data)}</td>
+    `;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AIRPORT DEMAND RENDER
+// ═══════════════════════════════════════════════════════════════════════════════
+const railGrid = document.getElementById('rail-grid');
+
+function demandBarClass(d) {
+  if (d.exceeded || d.overage > 0) return 'bar-red';
+  if (d.bin_capacity && d.demand >= d.bin_capacity * 0.9) return 'bar-orange';
+  return 'bar-green';
+}
+
+function renderRailHealth() {
+  const entries = [...railMap.values()].sort((a,b)=>(a.bin_start||'').localeCompare(b.bin_start||''));
+  if (!entries.length) return;
+  entries.forEach(d => {
+    const key = `${d.airport}/${d.bin_start}`;
+    let card = railGrid.querySelector(`[data-key="${CSS.escape(key)}"]`);
+    if (!card) { card = document.createElement('div'); card.className='rail-card'; card.dataset.key=key; railGrid.appendChild(card); }
+    const cap = d.bin_capacity || 0;
+    const barPct = cap ? Math.min((d.demand / cap) * 100, 100) : 0;
+    const badge = (d.exceeded || d.overage > 0) ? 'THROTTLE' : 'MONITOR';
+    const badgeText = (d.exceeded || d.overage > 0) ? 'BREACH' : 'WITHIN AAR';
+    card.innerHTML = `
+      <div class="rail-card-header">${d.airport||'—'} — ${fmtBin(d.bin_start, d.bin_end)}</div>
+      <div class="rail-bar-track"><div class="rail-bar-fill ${demandBarClass(d)}" style="width:${barPct}%"></div></div>
+      <div class="rail-stats"><div class="rail-inflight">${d.demand??'—'}</div><div class="rail-pct">/ ${d.bin_capacity??'—'} cap</div></div>
+      <div class="action-badge ${badgeClass(badge)}">${badgeText}</div>
+    `;
+  });
+  document.getElementById('h-inflight').textContent = entries.reduce((s,e)=>s+(e.demand||0),0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PUBLISHED RATES RENDER
+// ═══════════════════════════════════════════════════════════════════════════════
+function renderRates(d, totalAirports) {
+  const n = totalAirports ?? 1;
+  document.getElementById('scorer-model-label').textContent = `${d.airport||'—'} · ${d.runway_config||'—'}`;
+  document.getElementById('scorer-live-dot').style.cssText  = 'background:var(--classic-green);animation:pulse-dot 1.5s infinite';
+  const aar = d.aar ?? 0, adr = d.adr ?? 0;
+  document.getElementById('m-scored').textContent = aar;
+  const avgEl = document.getElementById('m-avg'); avgEl.textContent = adr; avgEl.className = 'metric-value green';
+  document.getElementById('m-avg-bar').style.width = (aar ? Math.min((adr/aar)*100,100) : 0)+'%';
+  document.getElementById('m-avg-bar').className   = 'latency-bar-fill bar-green';
+  document.getElementById('m-avg-sub').textContent  = 'departures / hr';
+  document.getElementById('m-max').textContent      = d.runway_config||'—';
+  const obEl=document.getElementById('m-overbudget'); obEl.textContent=n.toLocaleString(); obEl.className='metric-value green';
+  document.getElementById('m-overbudget-pct').textContent='airports';
+  document.getElementById('scorer-last-ts').textContent=fmtTimestamp(d.valid_from);
+  document.getElementById('s-scored').textContent=aar;
+  const sAvg=document.getElementById('s-avg'); sAvg.textContent=adr; sAvg.className='smetric-value green';
+  document.getElementById('s-overbudget').textContent=d.runway_config||'—';
+  document.getElementById('s-overbudget-denom').textContent='';
+  document.getElementById('h-scored').textContent=n.toLocaleString();
+  document.getElementById('h-latency').textContent=aar;
+  // Iceberg eligible count proxy
+  document.getElementById('iceberg-rows').textContent=n.toLocaleString();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AGE TICKER + QUEUE PRUNE
+// ═══════════════════════════════════════════════════════════════════════════════
+setInterval(() => { tbody.querySelectorAll('td[data-at]').forEach(td => { td.textContent = fmtAge(td.dataset.at); }); }, 1000);
+// Accumulating view: rows are never auto-removed. Bounded by MAX_CASES (see the
+// case-queue stream handler) which keeps only the most recent cases.
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SSE CONNECTIONS (Management tab data)
+// ═══════════════════════════════════════════════════════════════════════════════
+let sseOpen = 0;
+function setSSEStatus(open) {
+  sseOpen = open;
+  const dot=document.getElementById('conn-dot'), lbl=document.getElementById('conn-label');
+  if (open>=2) { dot.className='conn-dot live'; lbl.textContent='SSE LIVE'; }
+  else if (open>0) { dot.className='conn-dot reconnecting'; lbl.textContent='SSE CONNECTING'; }
+  else { dot.className='conn-dot stale'; lbl.textContent='SSE DISCONNECTED'; }
+}
+setSSEStatus(0);
+
+function onEvent() {
+  eventTotal++;
+  const now = new Date();
+  document.getElementById('status-last').textContent  = 'Last: '+now.toLocaleTimeString();
+  document.getElementById('status-events').textContent = eventTotal.toLocaleString()+' events';
+}
+
+function openStream(path, eventName, handler) {
+  const es = new EventSource(path);
+  es.addEventListener('open', () => { sseOpen++; setSSEStatus(sseOpen); });
+  es.addEventListener(eventName, e => {
+    onEvent();
+    try { handler(JSON.parse(e.data)); } catch {}
+  });
+  es.addEventListener('error', () => { sseOpen=Math.max(0,sseOpen-1); setSSEStatus(sseOpen); });
+}
+
+// Breach queue is driven entirely by the breach sink stream — each event is
+// self-contained (breach + Continuum weather/restriction enrichment), so no REST
+// bootstrap is needed. The table fills from the live stream. A REST bootstrap of
+// current breaches is loaded once for immediate content on page load.
+const MAX_CASES = 200; // accumulating view — keep the most recent N breaches
+fetch('/api/faa/breaches')
+  .then(r => r.ok ? r.json() : [])
+  .then(rows => {
+    rows.forEach(data => { const k = breachKey(data); if (k) caseMap.set(k, {data, lastSeen: Date.now()}); });
+    renderCaseQueue();
+  })
+  .catch(() => {});
+
+openStream('/api/faa/stream/breach', 'breach', data => {
+  const id = breachKey(data); if (!id) return;
+  // Pure upsert: each event is a current row snapshot; rows are never removed.
+  const isNew = !caseMap.has(id);
+  caseMap.set(id, {data, lastSeen: Date.now(), isNew});
+  if (caseMap.size > MAX_CASES) {
+    const keep = [...caseMap.entries()]
+      .sort((a, b) => (b[1].data.bin_start || '').localeCompare(a[1].data.bin_start || ''))
+      .slice(0, MAX_CASES);
+    caseMap.clear();
+    for (const [k, v] of keep) caseMap.set(k, v);
+  }
+  renderCaseQueue();
+  setTimeout(() => { if (caseMap.has(id)) caseMap.get(id).isNew = false; }, 600);
+});
+
+// Bootstrap airport demand with current state from Continuum, then SSE handles deltas
+fetch('/api/faa/demand')
+  .then(r => r.ok ? r.json() : [])
+  .then(rows => {
+    rows.forEach(d => railMap.set(`${d.airport}/${d.bin_start}`, d));
+    if (rows.length) renderRailHealth();
+  })
+  .catch(() => {});
+
+openStream('/api/faa/stream/demand', 'demand', data => {
+  if (!data.airport) return;
+  railMap.set(`${data.airport}/${data.bin_start}`, data);
+  renderRailHealth();
+});
+
+// Load published arrival rates (AAR/ADR) from Continuum — hero airport KEWR highlighted
+fetch('/api/faa/rates')
+  .then(r => r.ok ? r.json() : [])
+  .then(rows => {
+    if (!rows.length) return;
+    const hero = rows.find(r => r.airport === 'KEWR') || rows[0];
+    renderRates(hero, rows.length);
+  })
+  .catch(() => {});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MQTT — direct browser → Solace (MQTT over WebSocket)
+// ═══════════════════════════════════════════════════════════════════════════════
+const STATE_CENTROIDS = {
+  'AU-WA':  {x:135, y:308}, 'AU-SA': {x:363, y:452},
+  'AU-QLD': {x:553, y:222}, 'AU-NSW':{x:578, y:440},
+  'AU-VIC': {x:545, y:533},
+};
+
+function pulseMap(region, decision) {
+  const c = STATE_CENTROIDS[region]; if (!c) return;
+  const svg = document.getElementById('mapSvg');
+  const svgW = parseFloat(svg.getAttribute('viewBox').split(' ')[2]);
+  const svgH = parseFloat(svg.getAttribute('viewBox').split(' ')[3]);
+
+  const color = decision==='REVIEW'?'#FCA829':decision==='DECLINE'?'#FF4444':'#00C895';
+  const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+  circle.setAttribute('cx', c.x); circle.setAttribute('cy', c.y);
+  circle.setAttribute('r','4'); circle.setAttribute('fill', color);
+  circle.setAttribute('opacity','1'); circle.setAttribute('class','pulse-circle');
+  document.getElementById('pulseLayer').appendChild(circle);
+
+  let r=4, op=1, start=null;
+  function step(ts) {
+    if (!start) start=ts;
+    const p = Math.min((ts-start)/1100, 1);
+    circle.setAttribute('r', 4 + p*18);
+    circle.setAttribute('opacity', (1-p).toFixed(3));
+    if (p<1) requestAnimationFrame(step);
+    else circle.remove();
+  }
+  requestAnimationFrame(step);
+
+  // Increment count label
+  mapCounts[region] = (mapCounts[region]||0)+1;
+  const lbl = document.getElementById('cnt-'+region);
+  if (lbl) lbl.textContent = mapCounts[region];
+}
+
+function addMapLogRow(data, region, isNew) {
+  const el = document.createElement('div');
+  el.className = 'map-row' + (isNew ? ' new-row' : '');
+  const ts = new Date().toLocaleTimeString();
+  const sev = data.severity || 'OK';
+  el.innerHTML = `
+    <span class="map-ts">${ts}</span>
+    <span class="map-rail">${data.airport||'—'}</span>
+    <span class="map-amount">${data.overage!=null ? '+'+data.overage : (data.demand ?? '—')}</span>
+    <span class="map-region">${fmtRegion(region)}</span>
+    <span class="decision-badge ${decisionBadgeClass(sev)}">${sev}</span>
+  `;
+  const log = document.getElementById('map-log');
+  // Remove placeholder text on first event
+  if (log.children.length===1 && log.firstElementChild.style.animation) log.innerHTML='';
+  log.prepend(el);
+  while (log.children.length > 25) log.removeChild(log.lastChild);
+}
+
+// State click handler
+document.querySelectorAll('.aus-state:not(.muted)').forEach(el => {
+  el.addEventListener('click', () => {
+    const region = el.dataset.region;
+    if (selectedRegion === region) {
+      // Deselect
+      el.classList.remove('selected');
+      selectedRegion = null;
+      document.getElementById('map-side-title').textContent = 'ALL STATES';
+      document.getElementById('map-thin-btn').classList.remove('visible');
+    } else {
+      document.querySelectorAll('.aus-state').forEach(s=>s.classList.remove('selected'));
+      el.classList.add('selected');
+      selectedRegion = region;
+      const label = region.replace('AU-','');
+      document.getElementById('map-side-title').textContent = label;
+      const btn = document.getElementById('map-thin-btn');
+      btn.href = `thin-client.html?region=${encodeURIComponent(region)}`;
+      btn.classList.add('visible');
+    }
+  });
+});
+
+// MQTT client
+function setMQTTStatus(state) {
+  const dot = document.getElementById('mqtt-conn-dot');
+  const lbl = document.getElementById('mqtt-conn-label');
+  const tabDot = document.getElementById('mqtt-tab-dot');
+  if (state === 'live') {
+    dot.className='conn-dot live'; lbl.textContent='MQTT-WS LIVE';
+    tabDot.style.background='#ABFF88';
+    mqttConnected = true;
+  } else if (state === 'reconnecting') {
+    dot.className='conn-dot reconnecting'; lbl.textContent='MQTT-WS CONNECTING';
+    tabDot.style.background='var(--orange)';
+  } else {
+    dot.className='conn-dot stale'; lbl.textContent='MQTT-WS';
+    tabDot.style.background='var(--text-muted)';
+  }
+}
+
+const _mqttWsUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/fx/mqtt`;
+const mqttClient = mqtt.connect(_mqttWsUrl, {
+  clientId: 'dashboard-' + Math.random().toString(16).slice(2,8),
+  username: 'default',
+  password: 'default',
+  clean: true,
+  reconnectPeriod: 3000,
+  connectTimeout: 8000,
+});
+
+mqttClient.on('connect', () => {
+  mqttClient.subscribe('fl/faa/arrival-capacity/demand/#');
+  setMQTTStatus('live');
+});
+
+mqttClient.on('message', (topic, message) => {
+  let data; try { data = JSON.parse(message.toString()); } catch { return; }
+  const region = data.region;
+
+  // Animate pulse on map only when the payload carries a mapped region
+  if (region) pulseMap(region, data.severity || data.decision || 'APPROVE');
+
+  // Add to side panel log (filtered by selected region if any)
+  if (!selectedRegion || selectedRegion === region) {
+    addMapLogRow(data, region, true);
+  }
+});
+
+mqttClient.on('error',   () => setMQTTStatus('reconnecting'));
+mqttClient.on('offline', () => setMQTTStatus('reconnecting'));
+mqttClient.on('close',   () => { if (mqttConnected) setMQTTStatus('reconnecting'); });
+</script>
+</body>
+</html>

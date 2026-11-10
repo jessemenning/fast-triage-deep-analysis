@@ -1,0 +1,43 @@
+kind: entrypoint
+name: arrival_capacity_gateway
+description: "Event-mesh gateway for arrival-capacity: subscribes to the Continuum arrival-capacity-breach trigger, runs ArrivalCapacityWorkflow, and publishes the triage decision / brief."
+spec:
+  type: event_mesh
+  deploy: true
+  values:
+    artifact_handling_mode: reference
+    broker_url: tcp://solace:55555
+    broker_vpn: default
+    broker_username: default
+    broker_password: default
+    event_rules:
+      - name: arrival_capacity_handler
+        # Attribute event-mesh tasks to the default web-UI user so the flow shows
+        # in the Activity tab (the dashboard is user-scoped).
+        defaultUserIdentity: sam_dev_user
+        subscriptions:
+          # Incident trigger (one invariant row per airport per incident), NOT the
+          # per-bin breach storm (fl/faa/arrival-capacity/breach/> — that still feeds
+          # the UI alert feed). Continuum collapses the storm; SAM runs once per incident.
+          - topic: fl/faa/arrival-capacity/incident/>
+            qos: 0
+        messageFormat: json
+        payloadEncoding: utf-8
+        inputExpression: input.payload:insert
+        forwardContext:
+          airport: input.payload:insert.airport
+        targetWorkflowName: ArrivalCapacityWorkflow
+        acknowledgmentPolicy: { mode: on_receive }
+        successOutput:
+          enabled: true
+          format: json
+          responseType: custom
+          customExpression: "input.payload:data[0]"
+          topicType: dynamic
+          topic: solutions/arrival-capacity/decision/{{text://user_data.forward_context:airport}}
+        errorOutput:
+          enabled: true
+          format: json
+          responseType: error
+          topicType: dynamic
+          topic: solutions/arrival-capacity/error/{{text://user_data.forward_context:airport}}

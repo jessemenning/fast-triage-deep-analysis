@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+  <defs>
+    <linearGradient id="bgGrad2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#093B5F"/>
+      <stop offset="100%" stop-color="#03213B"/>
+    </linearGradient>
+    <linearGradient id="panelGrad2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0E4870"/>
+      <stop offset="100%" stop-color="#093B5F"/>
+    </linearGradient>
+    <marker id="arrowGreen" markerWidth="40" markerHeight="34" refX="32" refY="17" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L40,17 L0,34 Z" fill="#00C895"/>
+    </marker>
+    <marker id="arrowOrange" markerWidth="40" markerHeight="34" refX="32" refY="17" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L40,17 L0,34 Z" fill="#FCA829"/>
+    </marker>
+  </defs>
+
+  <!-- Canvas background -->
+  <rect x="0" y="0" width="1920" height="1080" fill="url(#bgGrad2)"/>
+
+  <!-- Title -->
+  <text x="960" y="110" text-anchor="middle" font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="600" font-size="52" fill="#FFFFFF">From Source Systems to Live Data Products</text>
+
+  <!-- ============ Stage labels ============ -->
+  <text x="210"  y="300" text-anchor="middle" font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="600" font-size="32" fill="#FFFFFF">Source Systems</text>
+  <text x="545"  y="300" text-anchor="middle" font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="600" font-size="30" fill="#FCA829">Microintegrations</text>
+  <text x="910"  y="300" text-anchor="middle" font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="600" font-size="32" fill="#FFFFFF">Event Mesh</text>
+  <text x="1280" y="300" text-anchor="middle" font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="600" font-size="32" fill="#FFFFFF">Continuum</text>
+  <text x="1670" y="300" text-anchor="middle" font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="600" font-size="32" fill="#FFFFFF">Data Products</text>
+
+  <!-- ============ A) Source Systems: 4 neutral chips ============ -->
+  <g font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="400" font-size="23" fill="#FFFFFF">
+    <rect x="80" y="405" width="260" height="64" rx="14" fill="url(#panelGrad2)" stroke="#145178" stroke-width="1.5"/>
+    <text x="210" y="444" text-anchor="middle">Salesforce</text>
+
+    <rect x="80" y="487" width="260" height="64" rx="14" fill="url(#panelGrad2)" stroke="#145178" stroke-width="1.5"/>
+    <text x="210" y="526" text-anchor="middle">SAP</text>
+
+    <rect x="80" y="569" width="260" height="64" rx="14" fill="url(#panelGrad2)" stroke="#145178" stroke-width="1.5"/>
+    <text x="210" y="608" text-anchor="middle">Databases</text>
+
+    <rect x="80" y="651" width="260" height="64" rx="14" fill="url(#panelGrad2)" stroke="#145178" stroke-width="1.5"/>
+    <text x="210" y="690" text-anchor="middle">APIs</text>
+  </g>
+
+  <!-- Fan-in connector lines from each source chip into the microintegrations band (orange) -->
+  <g stroke="#FCA829" stroke-width="2.5" fill="none" opacity="0.85">
+    <line x1="340" y1="437" x2="430" y2="560"/>
+    <line x1="340" y1="519" x2="430" y2="560"/>
+    <line x1="340" y1="601" x2="430" y2="560"/>
+    <line x1="340" y1="683" x2="430" y2="560"/>
+  </g>
+
+  <!-- ============ B) Microintegrations band (orange) ============ -->
+  <rect x="430" y="470" width="230" height="180" rx="20" fill="#FCA829" opacity="0.12" stroke="#FCA829" stroke-width="1.5" stroke-opacity="0.5"/>
+
+  <!-- Plug / connector glyphs -->
+  <g fill="#FCA829">
+    <rect x="480" y="490" width="12" height="22" rx="3"/>
+    <rect x="498" y="490" width="46" height="22" rx="6"/>
+
+    <rect x="480" y="549" width="12" height="22" rx="3"/>
+    <rect x="498" y="549" width="46" height="22" rx="6"/>
+
+    <rect x="480" y="608" width="12" height="22" rx="3"/>
+    <rect x="498" y="608" width="46" height="22" rx="6"/>
+  </g>
+
+  <!-- Microintegrations caption -->
+  <text x="545" y="700" text-anchor="middle" font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="400" font-size="21" fill="#8FB3C9">Lightweight connectors.</text>
+  <text x="545" y="730" text-anchor="middle" font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="400" font-size="21" fill="#8FB3C9">No middleware. No waiting.</text>
+
+  <!-- Orange arrow: microintegrations -> Event Mesh (sources-to-mesh hop reads as orange) -->
+  <line x1="660" y1="560" x2="748" y2="560" stroke="#FCA829" stroke-width="9" marker-end="url(#arrowOrange)"/>
+
+  <!-- ============ C) Event Mesh: bus / pipe shape ============ -->
+  <rect x="760" y="530" width="300" height="60" rx="30" fill="#00C895"/>
+  <g fill="#ABFF88">
+    <circle cx="810"  cy="518" r="7"/>
+    <circle cx="870"  cy="602" r="7"/>
+    <circle cx="930"  cy="518" r="7"/>
+    <circle cx="990"  cy="602" r="7"/>
+    <circle cx="1010" cy="518" r="7"/>
+  </g>
+  <g stroke="#ABFF88" stroke-width="2.5">
+    <line x1="810" y1="525" x2="810" y2="530"/>
+    <line x1="870" y1="590" x2="870" y2="595"/>
+    <line x1="930" y1="525" x2="930" y2="530"/>
+    <line x1="990" y1="590" x2="990" y2="595"/>
+    <line x1="1010" y1="525" x2="1010" y2="530"/>
+  </g>
+
+  <!-- Event Mesh caption -->
+  <text x="910" y="670" text-anchor="middle" font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="400" font-size="22" fill="#8FB3C9">Every change, as an event.</text>
+
+  <!-- Green arrow: Event Mesh -> Continuum -->
+  <line x1="1060" y1="560" x2="1138" y2="560" stroke="#00C895" stroke-width="9" marker-end="url(#arrowGreen)"/>
+
+  <!-- ============ D) Continuum panel ============ -->
+  <rect x="1150" y="400" width="260" height="320" rx="24" fill="url(#panelGrad2)" stroke="#145178" stroke-width="2"/>
+  <g>
+    <rect x="1190" y="499" width="180" height="34" rx="6" fill="#00C895"/>
+    <rect x="1190" y="543" width="180" height="34" rx="6" fill="#00C895" opacity="0.75"/>
+    <rect x="1190" y="587" width="180" height="34" rx="6" fill="#ABFF88" opacity="0.9"/>
+  </g>
+
+  <!-- Continuum caption -->
+  <text x="1280" y="760" text-anchor="middle" font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="400" font-size="22" fill="#8FB3C9">Joins and refines</text>
+  <text x="1280" y="790" text-anchor="middle" font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="400" font-size="22" fill="#8FB3C9">the live streams.</text>
+
+  <!-- Green arrow: Continuum -> Data Products -->
+  <line x1="1410" y1="560" x2="1472" y2="560" stroke="#00C895" stroke-width="9" marker-end="url(#arrowGreen)"/>
+
+  <!-- ============ E) Data Products: chips with green accent ============ -->
+  <g font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="400" font-size="23" fill="#FFFFFF">
+    <rect x="1480" y="450" width="380" height="60" rx="14" fill="url(#panelGrad2)" stroke="#145178" stroke-width="1.5"/>
+    <rect x="1480" y="450" width="6" height="60" rx="3" fill="#00C895"/>
+    <text x="1550" y="487" text-anchor="start">Account 360</text>
+
+    <rect x="1480" y="530" width="380" height="60" rx="14" fill="url(#panelGrad2)" stroke="#145178" stroke-width="1.5"/>
+    <rect x="1480" y="530" width="6" height="60" rx="3" fill="#00C895"/>
+    <text x="1550" y="567" text-anchor="start">Order Status</text>
+
+    <rect x="1480" y="610" width="380" height="60" rx="14" fill="url(#panelGrad2)" stroke="#145178" stroke-width="1.5"/>
+    <rect x="1480" y="610" width="6" height="60" rx="3" fill="#00C895"/>
+    <text x="1550" y="647" text-anchor="start">Risk Score</text>
+  </g>
+
+  <!-- Mono accent line -->
+  <text x="1670" y="705" text-anchor="middle" font-family="'Space Mono',ui-monospace,Menlo,monospace" font-size="20" fill="#ABFF88">Events &#183; MCP for agents &#183; SQL</text>
+
+  <!-- Data Products caption -->
+  <text x="1670" y="745" text-anchor="middle" font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="400" font-size="21" fill="#8FB3C9">One live object, reusable everywhere —</text>
+  <text x="1670" y="775" text-anchor="middle" font-family="'Figtree','Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="400" font-size="21" fill="#8FB3C9">governed.</text>
+</svg>

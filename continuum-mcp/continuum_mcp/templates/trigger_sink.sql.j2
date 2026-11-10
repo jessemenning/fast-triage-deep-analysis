@@ -1,0 +1,33 @@
+-- Trigger '{{ trigger.name }}' on {{ view_name }} -> {{ trigger.output_topic_template }}
+-- {{ trigger.description | replace('\n', ' ') }}
+CREATE MATERIALIZED VIEW {{ trigger_view }}
+WITH ('connectors' = '[{
+    "name": "trg-{{ slug }}-{{ trigger.name }}",
+    "transport": {
+        "name": "solace_output",
+        "config": {
+            "host":     "{{ broker.host }}",
+            "port":     {{ broker.port }},
+            "vpn":      "{{ broker.vpn }}",
+            "username": "{{ broker.username }}",
+            "password": "{{ broker.password }}",
+            "topic":    "{{ trigger.output_topic_template }}",
+            "delivery_mode": "direct"
+        }
+    },
+    "format": {"name": "json", "config": {"skip_deletes": true}}
+}]')
+AS SELECT{{ " DISTINCT" if trigger.distinct }}
+{% for col in payload_columns %}
+{% if col in placeholder_columns %}
+    COALESCE(CAST({{ col }} AS VARCHAR), 'unknown') AS {{ col }}{{ "," if not loop.last }}
+{% else %}
+    {{ col }}{{ "," if not loop.last }}
+{% endif %}
+{% endfor %}
+FROM {{ view_name }}
+WHERE ({{ trigger.condition | trim }})
+{% if recency %}
+  AND NOW() <= {{ event_time_column }} + INTERVAL '{{ recency[0] }}' {{ recency[1] }}
+{% endif %}
+;

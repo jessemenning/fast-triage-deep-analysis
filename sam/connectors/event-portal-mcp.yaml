@@ -1,0 +1,17 @@
+kind: connector
+name: event-portal-mcp
+description: "Solace Event Portal Designer MCP (optional) — discovery and registration of the Event Mesh landscape: application domains, events and event versions, schemas and schema versions, applications and application versions (including AsyncAPI export). Available for registering the solution's events/applications in Event Portal; requires SOLACE_API_TOKEN."
+spec:
+  type: mcp
+  subtype: remote
+  values:
+    server_url: "${EP_MCP_URL, http://ep-mcp:8092/mcp}"
+    connection_type: "streamable-http"
+    auth_type: "http"
+    auth_http_scheme: "bearer"
+    auth_http_bearer_token: "${EP_MCP_TOKEN}"
+    # Every tool surfaces to the agent as ep_<operationId>.
+    tool_name_prefix: "ep_"
+    # Exact operationIds (pre-prefix) from the Event Portal Designer OpenAPI spec.
+    # Read + create + update only; delete* and *State transitions are deliberately excluded.
+    allow_list: "getApplicationDomains,createApplicationDomain,getApplicationDomain,getApplications,createApplication,getApplication,updateApplication,getApplicationVersions,createApplicationVersion,getApplicationVersion,updateApplicationVersion,getAsyncApiForApplicationVersion,getEvents,createEvent,getEvent,getEventVersions,createEventVersion,getEventVersion,getSchemas,createSchema,getSchema,getSchemaVersions,createSchemaVersion,getSchemaVersion"

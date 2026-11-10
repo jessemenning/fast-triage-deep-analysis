@@ -1,0 +1,23 @@
+# App-config MCP tool entries appended to the built-in Builder's app_config.tools by
+# patch_builder.py. This is the low-level (solace-agent-mesh SAC) tool form — NOT the
+# declarative `kind: connector` form — because builder_agent.yaml is loaded directly from
+# a file by `sam run`, not applied through the platform.
+#
+# ${VAR} / ${VAR, default} are substituted by `sam run --system-env` from the container
+# environment (the sam service passes CONTINUUM_MCP_* / EP_MCP_* through — see
+# docker-compose.yml). Auth is a bearer header on the streamable-http transport.
+- tool_type: mcp
+  connection_params:
+    type: streamable-http
+    url: "${CONTINUUM_MCP_URL, http://continuum-mcp:8091/mcp}"
+    headers:
+      Authorization: "Bearer ${CONTINUUM_MCP_TOKEN}"
+  tool_name_prefix: "continuum_"
+  allow_list: "list_source_streams,list_data_products,get_data_product,search_catalog,preview_query,create_data_product,create_trigger,delete_trigger,delete_data_product,get_status,sync_event_portal"
+- tool_type: mcp
+  connection_params:
+    type: streamable-http
+    url: "${EP_MCP_URL, http://ep-mcp:8092/mcp}"
+    headers:
+      Authorization: "Bearer ${EP_MCP_TOKEN}"
+  tool_name_prefix: "ep_"
