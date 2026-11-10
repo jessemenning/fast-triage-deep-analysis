@@ -6,7 +6,7 @@ Feldera compile); after that, startups are fast. For what the demo *is*, see [RE
 ## Access you need first
 This pulls from three private GitHub repos and one LLM endpoint. Make sure you have:
 
-- **GitHub read access** to `jessemenning/faa-fast-slow`, `SolaceDev/continuum-solace-connector`,
+- **GitHub read access** to `jessemenning/fast-triage-deep-analysis`, `SolaceDev/continuum-solace-connector`,
   and `SolaceDev/solace-agent-mesh-go` (the licensed SAM image + CLI). You're a Solace dev, so you
   likely already do — confirm with `gh auth status`.
 - **An LLM endpoint + key** (required — the triage decision node and the System-2 agents run on it).
@@ -28,9 +28,9 @@ This pulls from three private GitHub repos and one LLM endpoint. Make sure you h
 gh auth login
 
 # 2. Clone this repo AND the sidecar repo SIDE BY SIDE (the sidecar builds from ../).
-git clone https://github.com/jessemenning/faa-fast-slow.git
+git clone https://github.com/jessemenning/fast-triage-deep-analysis.git
 git clone https://github.com/SolaceDev/continuum-solace-connector.git
-cd faa-fast-slow
+cd fast-triage-deep-analysis
 
 # 3. Pull the licensed SAM runtime image (gh release download + docker load).
 make pull-image

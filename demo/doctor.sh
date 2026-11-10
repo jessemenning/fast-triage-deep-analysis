@@ -4,8 +4,8 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-SAM_IMAGE_DEFAULT="solace-agent-mesh:2.373.11"
-SAM_CLI="${SAM:-sam-2.373.11}"
+SAM_IMAGE_DEFAULT="solace-agent-mesh:2.409.2"
+SAM_CLI="${SAM:-sam-2.409.2}"
 ok=0; warn=0; bad=0
 pass() { printf '  \033[32m✓\033[0m %s\n' "$1"; ok=$((ok+1)); }
 note() { printf '  \033[33m!\033[0m %s\n     \033[2m%s\033[0m\n' "$1" "$2"; warn=$((warn+1)); }

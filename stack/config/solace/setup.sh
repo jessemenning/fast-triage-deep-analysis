@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# config/solace/setup.sh — Configure Solace Platform for faa-fast-slow
+# config/solace/setup.sh — Configure Solace Platform for fast-triage-deep-analysis
 #
 # Fully Solace-native data plane. Creates in the default VPN one durable queue per
 # SWIM/SCDS feed that the feldera-solace sidecar binds (one ingest bridge per queue):
