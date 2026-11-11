@@ -23,13 +23,15 @@
             font-size:36px;font-weight:700;letter-spacing:.2px;color:var(--white)}
 
   /* simple per-slide section bar (which platform layer this slide is about) */
-  .topbar{position:absolute;top:0;left:0;right:0;height:34px;display:flex;align-items:center;justify-content:flex-start;padding-left:28px;
+  .topbar{position:absolute;top:0;left:0;right:0;height:34px;display:flex;align-items:center;justify-content:flex-start;padding-left:28px;gap:9px;line-height:1;
           font-family:var(--mono);font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);
           border-bottom:1px solid var(--line);background:rgba(3,33,59,.55)}
   .topbar.plat{color:var(--bright)}
   .topbar.cont{color:var(--sky)}
   .topbar.agent{color:var(--green)}
   .topbar.mesh{color:var(--muted)}
+  .topbar .ico{width:16px;height:16px;flex:0 0 auto;display:block}
+  .topbar .logo{height:17px;width:auto;flex:0 0 auto;display:block;position:relative;top:-3px}
 
   /* generic node box */
   .box{background:var(--panel2);border:1px solid var(--line);border-radius:14px;display:flex;flex-direction:column;
@@ -114,11 +116,11 @@
             width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;margin-right:12px;font-weight:700}
   .fstep.s0{width:100%;background:linear-gradient(180deg,rgba(9,59,95,.85),rgba(9,59,95,.5));border-color:var(--muted);color:var(--white)}
   .fstep.s0 .tag{font-family:var(--mono);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-left:12px}
-  .fstep.s1{width:88%;background:rgba(194,247,255,.14);border-color:var(--sky);color:var(--sky)}
-  .fstep.s2{width:74%;background:rgba(0,200,149,.14);border-color:var(--green);color:var(--bright)}
-  .fstep.s3{width:60%;background:rgba(252,168,41,.16);border-color:var(--orange);color:var(--orange)}
-  .fstep.s4{width:44%;background:rgba(0,200,149,.2);border-color:var(--green);color:var(--green)}
-  .fstep.s5{width:30%;background:linear-gradient(180deg,rgba(171,255,136,.28),rgba(0,200,149,.12));border-color:var(--bright);color:var(--bright)}
+  .fstep.s1{width:88%;background:rgba(127,166,196,.12);border-color:var(--muted);color:var(--white)}
+  .fstep.s2{width:74%;background:rgba(194,247,255,.14);border-color:var(--sky);color:var(--sky)}
+  .fstep.s3{width:60%;background:rgba(194,247,255,.14);border-color:var(--sky);color:var(--sky)}
+  .fstep.s4{width:44%;background:rgba(0,200,149,.16);border-color:var(--green);color:var(--green)}
+  .fstep.s5{width:30%;background:rgba(0,200,149,.16);border-color:var(--green);color:var(--green)}
   /* left-rail component brackets */
   .funnel-wrap{display:flex;align-items:flex-start;gap:18px}
   .funnel-labels{display:flex;flex-direction:column;gap:12px;width:140px;flex:0 0 auto}
@@ -133,6 +135,8 @@
   .fbracket.fb-sam{border-color:var(--green)} .fbracket.fb-sam .lbl{color:var(--green)}
   /* on the funnel slide, center the headline over the funnel (offset by the left rail) */
   .funnel-slide .headline{left:158px}
+  /* Slide 8: center the headline over the Agent Mesh box (offset by the MCP node on the right) */
+  .am-slide .headline{right:220px}
 
   /* ── Slide: why now (AI without context → context the layer delivers) ── */
   .why{display:flex;align-items:center;gap:48px;max-width:94vw}
@@ -240,9 +244,35 @@
 <body>
 <div class="deck">
 
-  <!-- 1 · three layers -->
+  <!-- 0 · why a real-time platform -->
   <section class="slide active">
-    <div class="topbar plat">Real-time AI Platform</div>
+    <div class="topbar plat"><img class="logo" src="assets/solace-logo.png" alt="Solace">Real-time AI Platform</div>
+    <h2 class="headline">Real-Time AI Needs a <span style="color:var(--green)">Real-Time Platform</span></h2>
+    <div class="fastslow">
+      <div class="fs-pair">
+        <div class="fs-card fast">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></svg>
+          <div class="h">Your data's scattered everywhere</div>
+          <div class="d">AI needs events from every system — apps, mainframe, cloud, edge, partners — delivered fast, in order, and without loss. Point-to-point wiring can't keep up.</div>
+        </div>
+        <div class="fs-card fast">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5" fill="currentColor"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="10" opacity="0.5"/></svg>
+          <div class="h">Raw events aren't answers</div>
+          <div class="d">AI needs consolidated, analysis-ready context — raw streams don't have it, and routing through a warehouse makes the answer stale by the time it lands.</div>
+        </div>
+        <div class="fs-card fast">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg>
+          <div class="h">Agents can't work together</div>
+          <div class="d">Fast responders and teams that collaborate to dig deep stay stranded as point tools — no shared mesh connects the different types across the enterprise.</div>
+        </div>
+      </div>
+      <div class="chip good">That takes a platform built for real-time AI — not an LLM bolted onto yesterday's stack.</div>
+    </div>
+  </section>
+
+  <!-- 1 · three layers -->
+  <section class="slide">
+    <div class="topbar plat"><img class="logo" src="assets/solace-logo.png" alt="Solace">Real-time AI Platform</div>
     <h2 class="headline">Move. <span style="color:var(--sky)">Understand.</span> Respond.</h2>
     <div class="platform">
       <div class="platform-label">Solace Real-time AI Platform</div>
@@ -258,7 +288,7 @@
 
   <!-- 2 · the funnel -->
   <section class="slide funnel-slide">
-    <div class="topbar plat">Real-time AI Platform</div>
+    <div class="topbar plat"><img class="logo" src="assets/solace-logo.png" alt="Solace">Real-time AI Platform</div>
     <h2 class="headline">From Firehose to Result</h2>
     <div class="funnel-wrap">
       <div class="funnel-labels">
@@ -280,7 +310,7 @@
 
   <!-- · event mesh: connect everything, filter by topic -->
   <section class="slide">
-    <div class="topbar mesh">Event Mesh</div>
+    <div class="topbar mesh"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></svg>Event Mesh</div>
     <h2 class="headline">A Proven Foundation, <span style="color:var(--green)">Extended</span></h2>
     <div class="em">
       <div class="em-ends">
@@ -293,17 +323,16 @@
         <span class="em-end"><svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><path d="m38.05,21.08c-.35.4-.71.6-1.14.8l2.27,8.1h-6.67l2.27-8.1h0c-.43-.2-.78-.4-1.14-.8l-10.22,36.6c-.07.2-.07.5,0,.7s.21.4.35.5.35.1.5,0,.28-.3.35-.5l.85-2.9h20.87l.85,2.9c.07.3.35.6.57.6.07,0,.14,0,.21-.1.14-.1.28-.3.35-.5s.07-.5,0-.7l-10.29-36.6Zm5.54,24.6h-3.19l-3.41-3.1,3.41-3.1h1.49l1.7,6.2Zm-5.54-6.1l-2.27,2-2.27-2h4.54Zm-3.34-1.8l1.14-1.7,1.14,1.7h-2.27Zm3.34,7.9h-4.47l2.2-2,2.27,2Zm.71,1.8l-2.98,2.1-2.98-2.1h5.96Zm.92-15.8l1.7,6.1h-2.77l-1.92-3.1,1.92-3.1,1.06.1Zm-2.77,0l-1.14,1.8-1.14-1.8h2.27Zm-4.9,0h1.06l1.92,3.1-1.92,3.1h-2.77l1.7-6.2Zm-2.2,7.9h1.49l3.41,3.1-3.41,3.1h-3.19l1.7-6.2Zm-3.9,14l1.7-6.1h2.48l4.33,3.1-4.33,3.1-4.19-.1Zm6.96,0l2.98-2.1,2.98,2.1h-5.96Zm8.73,0l-4.33-3.1,4.33-3.1h2.48l1.7,6.1-4.19.1Z" fill="currentColor" stroke-width="0"/><path d="m39.34,16.78c0,1.9-1.6,3.5-3.5,3.5s-3.5-1.6-3.5-3.5,1.6-3.5,3.5-3.5,3.5,1.6,3.5,3.5" fill="currentColor" stroke-width="0"/><path d="m29.34,13.48c-.4-.3-.9-.2-1.2.2-.7.9-1.1,2-1.1,3.2,0,1.1.4,2.2,1.1,3.2.2.2.4.3.7.3.2,0,.4-.1.5-.2.4-.3.5-.8.2-1.2-.5-.6-.7-1.3-.7-2.1s.2-1.5.7-2.1c.1-.2.2-.4.2-.6-.1-.4-.2-.6-.4-.7h0Z" fill="currentColor" stroke-width="0"/><path d="m25.44,10.98c-1.3,1.7-1.9,3.7-1.9,5.8s.7,4.1,1.9,5.8c.2.2.4.3.7.3.2,0,.4-.1.5-.2.4-.3.5-.8.2-1.2-1-1.4-1.6-3-1.6-4.7s.6-3.4,1.6-4.7c.3-.4.2-.9-.2-1.2-.3-.3-.9-.3-1.2.1h0Z" fill="currentColor" stroke-width="0"/><path d="m22.84,8.38c-1.8,2.4-2.8,5.4-2.8,8.4s1,6,2.8,8.4c.2.2.4.3.7.3.2,0,.4-.1.5-.2.4-.3.5-.8.2-1.2-1.6-2.1-2.4-4.7-2.4-7.4s.9-5.2,2.4-7.4c.3-.4.2-.9-.2-1.2-.4-.1-.9-.1-1.2.3h0Z" fill="currentColor" stroke-width="0"/><path d="m42.24,20.08c.2.1.3.2.5.2.3,0,.5-.1.7-.3.7-.9,1.1-2,1.1-3.2s-.4-2.2-1.1-3.2c-.1-.2-.3-.3-.6-.4-.2,0-.5,0-.7.2-.2.1-.3.4-.3.6s0,.5.2.7c.5.6.7,1.3.7,2.1s-.2,1.5-.7,2.1c-.1.2-.2.4-.2.6.1.3.3.5.4.6h0Z" fill="currentColor" stroke-width="0"/><path d="m44.94,10.88c-.4.3-.5.8-.2,1.2,1,1.4,1.6,3,1.6,4.7s-.6,3.4-1.6,4.7c-.3.4-.2.9.2,1.2.2.1.3.2.5.2.3,0,.5-.1.7-.3,1.3-1.7,1.9-3.7,1.9-5.8s-.7-4.1-1.9-5.8c-.1-.2-.4-.3-.6-.3-.2,0-.4,0-.6.2h0Z" fill="currentColor" stroke-width="0"/><path d="m47.34,24.18c-.3.4-.2.9.2,1.2.2.1.3.2.5.2.3,0,.5-.1.7-.3,1.8-2.4,2.8-5.4,2.8-8.4s-1-6-2.8-8.4c-.3-.4-.8-.4-1.2-.1s-.5.8-.2,1.2c1.6,2.1,2.4,4.7,2.4,7.4.1,2.5-.8,5-2.4,7.2h0Z" fill="currentColor" stroke-width="0"/></svg>Edge &amp; IoT</span>
         <span class="em-end"><svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><path d="m57.11,55.7h-2.83c.05-.11.09-.24.09-.37V21.37c0-.47-.38-.85-.85-.85h-8.43v-6.2c0-.47-.38-.85-.85-.85h-25.75c-.47,0-.85.38-.85.85v41.38h-2.75c-.47,0-.85.38-.85.85s.38.85.85.85h42.23c.47,0,.85-.38.85-.85s-.38-.85-.85-.85Zm-4.44-33.48v33.11c0,.13.03.26.09.37h-7.67V22.22h7.58Zm-33.34-7.05h24.06v40.53h-8.81v-3.52c0-.47-.38-.85-.85-.85h-4.75c-.47,0-.85.38-.85.85v3.52h-8.81V15.18Zm13.55,40.53h-3.05v-2.67h3.05v2.67Z" fill="currentColor" stroke-width="0"/><path d="m22.34,19.7h18.05c.47,0,.85-.38.85-.85s-.38-.85-.85-.85h-18.05c-.47,0-.85.38-.85.85s.38.85.85.85Z" fill="currentColor" stroke-width="0"/><path d="m22.34,23.97h18.05c.47,0,.85-.38.85-.85s-.38-.85-.85-.85h-18.05c-.47,0-.85.38-.85.85s.38.85.85.85Z" fill="currentColor" stroke-width="0"/><path d="m22.34,28.25h18.05c.47,0,.85-.38.85-.85s-.38-.85-.85-.85h-18.05c-.47,0-.85.38-.85.85s.38.85.85.85Z" fill="currentColor" stroke-width="0"/><path d="m22.34,32.52h18.05c.47,0,.85-.38.85-.85s-.38-.85-.85-.85h-18.05c-.47,0-.85.38-.85.85s.38.85.85.85Z" fill="currentColor" stroke-width="0"/><path d="m22.34,36.79h18.05c.47,0,.85-.38.85-.85s-.38-.85-.85-.85h-18.05c-.47,0-.85.38-.85.85s.38.85.85.85Z" fill="currentColor" stroke-width="0"/><path d="m22.34,41.06h18.05c.47,0,.85-.38.85-.85s-.38-.85-.85-.85h-18.05c-.47,0-.85.38-.85.85s.38.85.85.85Z" fill="currentColor" stroke-width="0"/><path d="m25.56,52.24h-3.33c-.47,0-.85.38-.85.85s.38.85.85.85h3.33c.47,0,.85-.38.85-.85s-.38-.85-.85-.85Z" fill="currentColor" stroke-width="0"/></svg>Partners</span>
       </div>
-      <div class="em-core">Event Mesh<span class="s">proven in production, enterprise-wide</span></div>
+      <div class="em-core">Event Mesh</div>
       <div class="em-topic">
-        <div class="k">Extend — don't replace</div>
-        <div class="d">Years of battle-tested, enterprise-wide connectivity and topic-based routing. Continuum and Agent Mesh <b>build on these strengths</b> to conquer real-time, agentic challenges — not a rip-and-replace.</div>
+        <div class="d">Years of battle-tested connectivity and topic-based routing — with high-speed, guaranteed, in-order delivery to and from anywhere. Continuum and Agent Mesh <b>build on these strengths</b> to conquer real-time, agentic challenges — not a rip-and-replace.</div>
       </div>
     </div>
   </section>
 
   <!-- 3 · data layer feeding many programs -->
   <section class="slide">
-    <div class="topbar cont">Continuum</div>
+    <div class="topbar cont"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5" fill="currentColor"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="10" opacity="0.5"/></svg>Continuum</div>
     <h2 class="headline">Build It Once, Feed Everything</h2>
     <div class="flow">
       <div class="col srcs">
@@ -336,7 +365,7 @@
 
   <!-- 4 · incremental compute engine (simplified pipeline) -->
   <section class="slide">
-    <div class="topbar cont">Continuum</div>
+    <div class="topbar cont"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5" fill="currentColor"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="10" opacity="0.5"/></svg>Continuum</div>
     <h2 class="headline">Compute the Change, <span style="color:var(--green)">Not the World</span></h2>
     <div class="ic">
       <div class="ic-pipe">
@@ -374,7 +403,7 @@
 
   <!-- 4 · why it matters now -->
   <section class="slide">
-    <div class="topbar cont">Continuum</div>
+    <div class="topbar cont"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5" fill="currentColor"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="10" opacity="0.5"/></svg>Continuum</div>
     <h2 class="headline">Analysis-Ready Context</h2>
     <div class="why">
       <div class="wcard ctx">
@@ -386,7 +415,7 @@
       </div>
       <div class="warrow">▸</div>
       <div class="wcard good">
-        <div class="wlabel">Services · People · AI — all benefit</div>
+        <div class="wlabel">Services · People · AI</div>
         <div class="chip good">Faster</div>
         <div class="chip good">Cheaper</div>
         <div class="chip good">More accurate</div>
@@ -395,8 +424,8 @@
   </section>
 
   <!-- 5 · fast/slow on Agent Mesh -->
-  <section class="slide">
-    <div class="topbar agent">Agent Mesh</div>
+  <section class="slide am-slide">
+    <div class="topbar agent"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg>Agent Mesh</div>
     <h2 class="headline">Fast Triage, <span style="color:var(--green)">Deep Investigation</span></h2>
     <div class="fastslow">
       <div class="am-row">
@@ -425,10 +454,9 @@
           </div>
         </div>
         <div class="am-props">
+          <span class="am-prop">Any agent, one mesh</span>
           <span class="am-prop">Real-time at scale</span>
-          <span class="am-prop">Deploy on your terms</span>
-          <span class="am-prop">Advisory → autonomous</span>
-          <span class="am-prop">Triggered by events</span>
+          <span class="am-prop">Deploy anywhere</span>
         </div>
       </div>
       </div>

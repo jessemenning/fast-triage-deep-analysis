@@ -160,6 +160,8 @@
   body.tv .node{cursor:pointer}
   body.tv .node .nm{font-size:16px}
   body.tv .node .kd,body.tv .node .topic,body.tv .node .solace{display:none}
+  /* ...but keep each Solace sink's output topic visible — it's the hand-off to the mesh */
+  body.tv .node.k-sink .topic{display:block;color:var(--orange);font-size:11px;white-space:normal;line-height:1.3}
   body.tv svg.edges path{stroke-width:3.5}
   body.tv svg.edges path.fired{stroke-width:5.5}
   /* the stage narrative = a headline */
@@ -317,7 +319,7 @@ const NODES = [
   // §8 breach edge-detect (the old "Trigger" pane)
   {id:'capacity_breach_events', label:'Capacity breaches', kind:'mv', row:5, stage:4, spine:true},
   // §10 + §11 terminal read/feed branch
-  {id:'fl_arrival_demand_sink', label:'Demand feed out', kind:'sink', row:6, stage:6},
+  {id:'fl_arrival_demand_sink', label:'Demand feed out', kind:'sink', row:6, stage:6, topic:'fl/faa/arrival-capacity/demand/{airport}'},
   {id:'mcp_arrival_demand',     label:'Demand (brief)',       kind:'mv', row:6, stage:6, dim:true},
   {id:'mcp_downstream_risk',    label:'Downstream risk',      kind:'mv', row:6, stage:6, dim:true},
   {id:'mcp_airport_rate',       label:'Rate (brief)',         kind:'mv', row:6, stage:6, dim:true},
@@ -329,9 +331,9 @@ const NODES = [
   {id:'arrival_context', label:'Breach + context', kind:'mv', row:8, stage:5, spine:true},
   // §9 collapse + §10 breach sink
   {id:'arrival_incident', label:'Airport incident', kind:'mv', row:9, stage:5, spine:true, note:'one per airport'},
-  {id:'fl_arrival_breach_sink', label:'Breach feed out', kind:'sink', row:9, stage:6},
+  {id:'fl_arrival_breach_sink', label:'Breach feed out', kind:'sink', row:9, stage:6, topic:'fl/faa/arrival-capacity/breach/{airport}'},
   // §10 incident sink → the SAM escalation trigger
-  {id:'fl_arrival_incident_sink', label:'Incident → SAM', kind:'sink', row:10, stage:6, spine:true},
+  {id:'fl_arrival_incident_sink', label:'Incident → SAM', kind:'sink', row:10, stage:6, spine:true, topic:'fl/faa/arrival-capacity/incident/{airport}'},
 ];
 const EDGES = [
   // §0 Solace streams → ingest tables (the graphical feed connection)
