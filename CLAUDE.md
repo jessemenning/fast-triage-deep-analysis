@@ -13,10 +13,23 @@ an ESCALATE-only System-2 investigation that produces an advisory **decision bri
 
 ## Design decisions (what makes this one different)
 
-- **Fully Solace-native data plane. No Postgres, no CDC.** Every feed — flights (FDPS), published
-  rates (TTP Airport Information), ETAs (TTPFD), weather (METAR), restrictions (TMR) — arrives over
-  Solace as real SWIM/SCDS feeds do. A rate change *is* an event. There is therefore **no
-  `postgres_cdc_input` and no `reset_stale_cdc_state` self-heal** (unlike CDC-based variants).
+- **Solace-native data plane. No Postgres, no CDC.** Most feeds — flights (FDPS), published rates
+  (TTP Airport Information), ETAs (TTPFD), restrictions (TMR) — arrive over Solace as real SWIM/SCDS
+  feeds do. A rate change *is* an event. There is therefore **no `postgres_cdc_input` and no
+  `reset_stale_cdc_state` self-heal** (unlike CDC-based variants).
+- **ONE feed (METAR) rides the nisshi Kafka on-ramp — a deliberate, narrated deviation.** [nisshi](https://nisshi.io/)
+  is a Solace-backed, Apache-Kafka-compatible broker (OSS). Weather is produced to the nisshi Kafka
+  topic `aviation.metar` instead of Solace SMF; stock Feldera reads it with its **native `kafka_input`**
+  connector (unrelated to the removed Solace connector — Kafka is core Feldera), and writes a normalized
+  view back to nisshi via **`kafka_output`** (`aviation.metar.normalized`, the "both directions"
+  showcase). The arrival-capacity pipeline still sinks the incident/brief to Solace through the sidecar
+  unchanged — so **nisshi feeds the Solace mesh *through* Feldera**. The story: Solace meeting Kafka
+  workloads where they are, via its own Kafka-compatible broker. Wiring: `nisshi` + `nisshi-topics`
+  services in `docker-compose.yml`; producers `stack/feed/replay.py` + `stack/scenario/scenario_driver.py`
+  route the `aviation/metar/` prefix to Kafka (`kafka-python`); the `faa_ingest_metar_kafka` table and
+  `nisshi_metar_normalized` view in `faa_program.sql` (§1/§10); `${NISSHI_BOOTSTRAP}` is sed-substituted
+  by `init.sh` like the Solace vars. METAR has **no** `fl-aviation-metar` queue or sidecar ingest.
+  `make nisshi-peek TOPIC=aviation.metar.normalized` tails either Kafka leg.
 - **"Versioned side input" in SQL, not a database.** `airport_rate` derives each rate version's
   `valid_from`/`valid_to` from the rate stream (`LEAD()` per airport), so a temporal join picks the
   "rate in effect" for each demand bin. Drop the AAR via a new rate event and every affected bin
@@ -56,11 +69,13 @@ an ESCALATE-only System-2 investigation that produces an advisory **decision bri
 | Service | Port(s) | Role |
 |---|---|---|
 | solace | 55555 SMF, 8089 SEMP, 1883 MQTT, 8008 MQTT-WS, 9000 REST | Event Mesh |
+| nisshi | 9092 | Kafka-compatible broker (Solace-backed, OSS; `ghcr.io/nisshi-io/nisshi`) — the METAR on-ramp Feldera reads via `kafka_input` and writes back via `kafka_output`. In-memory storage (ephemeral) |
+| nisshi-topics | — | one-shot: pre-creates the `aviation.metar` + `aviation.metar.normalized` topics (nisshi doesn't auto-create; Feldera's `kafka_output` needs the topic at start). Reuses the feed image |
 | feldera | 8081 | Continuum engine + console (**stock** upstream `ghcr.io/feldera/pipeline-manager:latest`) |
-| sidecar | 8079 | feldera-solace sidecar — bridges Solace ⇄ Feldera over HTTP (built from `../continuum-solace-connector`, OSS/non-FIPS) |
-| init | — | one-shot: broker queue setup (`setup.sh`) + load/start the base pipeline (`init.sh`) |
-| feed | — | `replay.py` — replays the canned SWIM corpus on a timeline |
-| scenario | — | `scenario_driver.py` — the wind-shift scenario |
+| sidecar | 8079 | feldera-solace sidecar — bridges Solace ⇄ Feldera over HTTP (built from `../continuum-solace-connector`, OSS/non-FIPS). **Does NOT bridge METAR** (that's Kafka/nisshi) |
+| init | — | one-shot: broker queue setup (`setup.sh`) + load/start the base pipeline (`init.sh`). Gates on `nisshi-topics` so the Kafka topics exist before the pipeline starts |
+| feed | — | `replay.py` — replays the canned SWIM corpus on a timeline (METAR → nisshi/Kafka, rest → Solace SMF) |
+| scenario | — | `scenario_driver.py` — the wind-shift scenario (degraded METAR → nisshi/Kafka) |
 | api | 8080 | FastAPI + demo UI (`/demo.html`, `/api/faa/*`) |
 | continuum-mcp | 8091 | Continuum as data products + triggers (generation engine) |
 | ep-mcp | 8092 | Event Portal MCP (optional; `SOLACE_API_TOKEN`) |
@@ -70,10 +85,13 @@ an ESCALATE-only System-2 investigation that produces an advisory **decision bri
 
 The load-bearing, net-new file. Sections:
 
-1. **§1 Ingest tables** (`faa_ingest_*_raw`) — plain tables fed by the **sidecar** over HTTP `/ingress`
+1. **§1 Ingest tables** — `faa_ingest_*_raw` are plain tables fed by the **sidecar** over HTTP `/ingress`
    (not an in-SQL connector). The sidecar runs `payload_mode: wrap`: raw JSON body in `payload`, with
    topic-level captures + `solace_topic` + `broker_ts` merged in as same-named JSON fields. Queue→table
-   mapping lives in `stack/sidecar/config.yaml`; the `fl-*` queues are created by `setup.sh`.
+   mapping lives in `stack/sidecar/config.yaml`; the `fl-*` queues are created by `setup.sh`. **Exception:
+   `faa_ingest_metar_kafka`** carries an in-SQL `kafka_input` connector (topic `aviation.metar`,
+   `${NISSHI_BOOTSTRAP}`, json `update_format: raw`, typed columns) — Feldera reads METAR straight from
+   nisshi, no sidecar, no queue.
 2. **§2 Dedup** (`flightplan_latest`, `eta_latest`) — `LOCAL`; latest row per GUFI (`ROW_NUMBER`) over a
    1-day `NOW()` window so the TopK state is bounded (see *Rolling out a change* under Operating it).
 3. **§3 `airports`** — tiny static reference as an inline `VALUES` view (the only non-streamed data).
@@ -88,9 +106,11 @@ The load-bearing, net-new file. Sections:
    frozen-degraded SEVERE bins at once instead of waiting ~1 h for the event-time window to slide past.
 8. **§8 `capacity_breach_events`** — hysteresis: material (≥10% of AAR) **and** sustained (prev bin
    also over) → `severity`.
-9. **§9 context** — `metar_latest`, `active_restriction`, `arrival_context` (the enriched breach),
-   `arrival_incident` (one invariant row per SEVERE airport — the trigger) and `arrival_incident_state`
-   (one row per KNOWN airport with a `status` that flips SEVERE↔CLEAR — the observable recovery edge).
+9. **§9 context** — `metar_latest` (now reads the typed `faa_ingest_metar_kafka` columns instead of
+   `PARSE_JSON(payload)`; **output schema unchanged**, so `arrival_context`/`mcp_weather` downstream are
+   untouched), `active_restriction`, `arrival_context` (the enriched breach), `arrival_incident` (one
+   invariant row per SEVERE airport — the trigger) and `arrival_incident_state` (one row per KNOWN
+   airport with a `status` that flips SEVERE↔CLEAR — the observable recovery edge).
 10. **§10 sinks** — plain `MATERIALIZED VIEW`s the **sidecar** streams over `/egress` and publishes to
     Solace (`payload_shape: envelope` → the same `{"insert":…}`/`{"delete":…}` bytes consumers already
     parse). Mapping in `stack/sidecar/config.yaml`: `fl_arrival_breach_sink` →
@@ -100,6 +120,9 @@ The load-bearing, net-new file. Sections:
     `fl_arrival_incident_state_sink` → `fl/faa/arrival-capacity/incident-state/{airport}`
     (`publish_deletes: envelope` — the SEVERE↔CLEAR edge the UI / verified reset / smoketest wait on);
     `fl_arrival_demand_sink` → `fl/faa/arrival-capacity/demand/{airport}` (`publish_deletes: envelope`, UI).
+    Plus one **Kafka** sink (NOT the sidecar): `nisshi_metar_normalized` carries an in-SQL `kafka_output`
+    connector → nisshi topic `aviation.metar.normalized` (the reverse leg of the "both directions"
+    showcase; `update_format: insert_delete`). This is additive — the Solace sinks above are unchanged.
 11. **§11 `mcp_*` views** — queried by the System-2 specialists / continuum-mcp.
 
 **Feldera dialect notes (this is net-new; can't be compiled offline):**

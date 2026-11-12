@@ -296,13 +296,13 @@ const NODES = [
   {id:'src_flightplan', label:'Flight plan feed', kind:'stream', row:-1, stage:0, mqtt:'FDPS/flightPlan/#', topic:'FDPS/flightPlan', feeds:'faa_ingest_flightplan_raw'},
   {id:'src_eta',        label:'ETA feed',         kind:'stream', row:-1, stage:0, mqtt:'TTP/flightData/#',  topic:'TTP/flightData',  feeds:'faa_ingest_eta_raw'},
   {id:'src_rate',       label:'Rate feed',        kind:'stream', row:-1, stage:0, mqtt:'TTP/airportInfo/#', topic:'TTP/airportInfo', feeds:'faa_ingest_rate_raw'},
-  {id:'src_metar',      label:'Weather feed',     kind:'stream', row:-1, stage:0, mqtt:'aviation/metar/#',  topic:'aviation/metar',  feeds:'faa_ingest_metar_raw'},
+  {id:'src_metar',      label:'Weather feed (nisshi/Kafka)', kind:'stream', row:-1, stage:0, topic:'aviation.metar',  feeds:'faa_ingest_metar_kafka'},
   {id:'src_tmr',        label:'Restriction feed', kind:'stream', row:-1, stage:0, mqtt:'TTP/restriction/#', topic:'TTP/restriction', feeds:'faa_ingest_tmr_raw'},
   // §1 ingest
   {id:'faa_ingest_flightplan_raw', label:'Flight plans', kind:'ingest', row:0, stage:1, spine:true},
   {id:'faa_ingest_eta_raw',        label:'ETAs',         kind:'ingest', row:0, stage:1, spine:true},
   {id:'faa_ingest_rate_raw',       label:'Airport rates',kind:'ingest', row:0, stage:1},
-  {id:'faa_ingest_metar_raw',      label:'Weather obs',  kind:'ingest', row:0, stage:1},
+  {id:'faa_ingest_metar_kafka',      label:'Weather obs',  kind:'ingest', row:0, stage:1},
   {id:'faa_ingest_tmr_raw',        label:'Restrictions', kind:'ingest', row:0, stage:1},
   // §2 dedup (plain views) + §4/§5/§9 first-order derives
   {id:'flightplan_latest', label:'Latest flight plan', kind:'view', row:1, stage:2, spine:true},
@@ -340,12 +340,12 @@ const EDGES = [
   ['src_flightplan','faa_ingest_flightplan_raw'],
   ['src_eta','faa_ingest_eta_raw'],
   ['src_rate','faa_ingest_rate_raw'],
-  ['src_metar','faa_ingest_metar_raw'],
+  ['src_metar','faa_ingest_metar_kafka'],
   ['src_tmr','faa_ingest_tmr_raw'],
   ['faa_ingest_flightplan_raw','flightplan_latest'],
   ['faa_ingest_eta_raw','eta_latest'],
   ['faa_ingest_rate_raw','airport_rate'],
-  ['faa_ingest_metar_raw','metar_latest'],
+  ['faa_ingest_metar_kafka','metar_latest'],
   ['faa_ingest_tmr_raw','active_restriction'],
   ['flightplan_latest','flight'],
   ['eta_latest','flight'],
@@ -616,7 +616,8 @@ const STREAM_PREFIX = [
   ['FDPS/flightPlan/','src_flightplan'],
   ['TTP/flightData/', 'src_eta'],
   ['TTP/airportInfo/','src_rate'],
-  ['aviation/metar/', 'src_metar'],
+  // METAR is NOT on Solace/MQTT — it rides the nisshi Kafka on-ramp (Feldera kafka_input),
+  // so src_metar can't be lit from the browser's MQTT feed. Shown as a static node.
   ['TTP/restriction/','src_tmr'],
 ];
 function pulseStream(sid){

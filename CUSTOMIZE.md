@@ -76,7 +76,8 @@ stamped UTC (`YYYY-MM-DD HH:MM:SS`) so they cast straight to SQL `TIMESTAMP`.
 
 | What | Object | Section |
 |---|---|---|
-| Solace ingest (FDPS/TTP/METAR) | `faa_ingest_*_raw` tables | §1 |
+| Solace ingest (FDPS/TTP) | `faa_ingest_*_raw` tables (sidecar `/ingress`) | §1 |
+| Kafka ingest (METAR via nisshi) | `faa_ingest_metar_kafka` (native `kafka_input`) | §1 |
 | Latest-per-key dedup | `flightplan_latest`, `eta_latest` | §2 |
 | Static airport reference | `airports` (inline VALUES) | §3 |
 | **Versioned rate (valid_from..valid_to)** | `airport_rate` (LEAD over the rate stream) | §4 |
@@ -86,6 +87,7 @@ stamped UTC (`YYYY-MM-DD HH:MM:SS`) so they cast straight to SQL `TIMESTAMP`.
 | **Breach + hysteresis** | `capacity_breach_events` | §8 |
 | Weather/restriction context | `metar_latest`, `active_restriction`, `arrival_context` | §9 |
 | Solace sinks | `fl_arrival_breach_sink`, `fl_arrival_demand_sink` | §10 |
+| Kafka sink (reverse leg → nisshi) | `nisshi_metar_normalized` (native `kafka_output`) | §10 |
 | MCP tool views | `mcp_*` | §11 |
 
 **Feldera caveats (this is net-new SQL):**

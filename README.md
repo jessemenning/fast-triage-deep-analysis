@@ -70,31 +70,38 @@ decision brief with options and downstream airports at risk.
 
 ## Data streams
 
-Ingest (replayed canned SWIM, Solace-native):
+Ingest (replayed canned SWIM):
 
-| Feed | Topic | Feldera table |
-|---|---|---|
-| FDPS position | `FDPS/position/{…}/{gufi}` | `faa_ingest_position_raw` |
-| FDPS flight plan | `FDPS/flightPlan/{…}/{gufi}` | `faa_ingest_flightplan_raw` |
-| TTPFD ETA | `TTP/flightData/{gufi}/{arrival}/{eta_source}` | `faa_ingest_eta_raw` |
-| TTP Airport Information (AAR) | `TTP/airportInfo/{airport}` | `faa_ingest_rate_raw` |
-| TMR restriction | `TTP/restriction/{airport}/{type}` | `faa_ingest_tmr_raw` |
-| METAR | `aviation/metar/{station_id}` | `faa_ingest_metar_raw` |
+| Feed | Transport | Topic | Feldera table |
+|---|---|---|---|
+| FDPS position | Solace SMF | `FDPS/position/{…}/{gufi}` | `faa_ingest_position_raw` |
+| FDPS flight plan | Solace SMF | `FDPS/flightPlan/{…}/{gufi}` | `faa_ingest_flightplan_raw` |
+| TTPFD ETA | Solace SMF | `TTP/flightData/{gufi}/{arrival}/{eta_source}` | `faa_ingest_eta_raw` |
+| TTP Airport Information (AAR) | Solace SMF | `TTP/airportInfo/{airport}` | `faa_ingest_rate_raw` |
+| TMR restriction | Solace SMF | `TTP/restriction/{airport}/{type}` | `faa_ingest_tmr_raw` |
+| METAR | **nisshi (Kafka)** | `aviation.metar` | `faa_ingest_metar_kafka` (native `kafka_input`) |
+
+METAR rides the [nisshi](https://nisshi.io/) Kafka on-ramp (a Solace-backed, Kafka-compatible
+broker): Feldera reads it with its native `kafka_input` connector and writes `aviation.metar.normalized`
+back to nisshi via `kafka_output`, while the pipeline still sinks the incident/brief to Solace through
+the sidecar. Peek either Kafka topic with `make nisshi-peek TOPIC=aviation.metar.normalized`.
 
 Output (Continuum → mesh):
 
-| Stream | Topic |
-|---|---|
-| Arrival-capacity breach (agent trigger) | `fl/faa/arrival-capacity/breach/{airport}` |
-| Live demand vs capacity (UI) | `fl/faa/arrival-capacity/demand/{airport}` |
-| Agent triage (interim) | `solutions/arrival-capacity/triage` |
-| Agent decision + brief | `solutions/arrival-capacity/decision/{airport}` |
+| Stream | Transport | Topic |
+|---|---|---|
+| Arrival-capacity breach (agent trigger) | Solace | `fl/faa/arrival-capacity/breach/{airport}` |
+| Live demand vs capacity (UI) | Solace | `fl/faa/arrival-capacity/demand/{airport}` |
+| Normalized weather (reverse Kafka leg) | nisshi (Kafka) | `aviation.metar.normalized` |
+| Agent triage (interim) | Solace | `solutions/arrival-capacity/triage` |
+| Agent decision + brief | Solace | `solutions/arrival-capacity/decision/{airport}` |
 
 ## Services & ports
 
 | Service | Port | Role |
 |---|---|---|
 | solace | 55555 / 8089 / 1883 / 8008 / 9000 | Event Mesh (SMF / SEMP / MQTT / MQTT-WS / REST) |
+| nisshi | 9092 | Kafka-compatible broker (Solace-backed, OSS) — the METAR on-ramp Feldera reads/writes over Kafka |
 | feldera | 8081 | Continuum engine + console (stock upstream) |
 | sidecar | 8079 | feldera-solace sidecar — bridges Solace ⇄ Feldera (built from `../continuum-solace-connector`) |
 | api | 8080 | FastAPI + demo UI (`/demo.html`, `/api/faa/*`) |

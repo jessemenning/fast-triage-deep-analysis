@@ -107,12 +107,33 @@ CREATE TABLE faa_ingest_tmr_raw (
     broker_ts        TIMESTAMP
 );
 
--- ── METAR ─────────────────────────────────────────────────────────────────────
-CREATE TABLE faa_ingest_metar_raw (
-    payload      VARCHAR,
-    solace_topic VARCHAR,
-    station_id   VARCHAR,
-    broker_ts    TIMESTAMP
+-- ── METAR — rides the nisshi Kafka on-ramp (NOT the sidecar/SMF path) ──────────
+-- Kafka topic: aviation.metar, produced by replay.py + scenario_driver.py over the
+-- Kafka protocol to nisshi. Feldera reads it with its NATIVE kafka_input connector —
+-- so there is no sidecar ingest bridge and no fl-aviation-metar queue for this feed.
+-- ${NISSHI_BOOTSTRAP} is substituted by init.sh (like the Solace env vars elsewhere).
+-- json update_format=raw: each Kafka message is one bare row object (a feed, no deletes).
+-- Column names match the METAR JSON keys (JSON key matching is case-insensitive). wdir
+-- and reportTime stay VARCHAR so metar_latest keeps its numeric guard + explicit CAST,
+-- exactly as the old PARSE_JSON(payload) path did — its OUTPUT schema is unchanged, so
+-- arrival_context / mcp_weather downstream are untouched.
+CREATE TABLE faa_ingest_metar_kafka (
+    icaoId     VARCHAR,
+    reportTime VARCHAR,
+    fltCat     VARCHAR,
+    wdir       VARCHAR,
+    wspd       INT,
+    visib      VARCHAR,
+    rawOb      VARCHAR
+) WITH (
+    'connectors' = '[{
+        "transport": { "name": "kafka_input", "config": {
+            "topic": "aviation.metar",
+            "start_from": "earliest",
+            "bootstrap.servers": "${NISSHI_BOOTSTRAP}"
+        }},
+        "format": { "name": "json", "config": { "update_format": "raw", "array": false } }
+    }]'
 );
 
 -- ── Reset marker (↺ Reset button / API) ───────────────────────────────────────
@@ -358,22 +379,26 @@ WHERE overage >= GREATEST(CAST(0.10 * bin_capacity AS INTEGER), 1)   -- ≥10% o
 -- §9  WEATHER + RESTRICTION CONTEXT (for the decision brief / provenance)
 -- ═════════════════════════════════════════════════════════════════════════════
 
+-- Source is now the nisshi Kafka table (typed columns), not the sidecar payload blob.
+-- Output schema is byte-identical to the old PARSE_JSON path, so arrival_context (§9)
+-- and mcp_weather (§11) that read metar_latest need no change. wind_dir keeps the
+-- numeric guard (the wind-shift METAR carries e.g. "040"); low cardinality (per
+-- station), so no NOW() bound needed on the TopK.
 CREATE MATERIALIZED VIEW metar_latest AS
 SELECT station_id, observed_at, flight_category, wind_dir_degrees, wind_speed_kt,
        visibility_sm, wx_string
 FROM (
     SELECT
-        CAST(PARSE_JSON(payload)['icaoId'] AS VARCHAR)      AS station_id,
-        CAST(PARSE_JSON(payload)['reportTime'] AS TIMESTAMP) AS observed_at,
-        CAST(PARSE_JSON(payload)['fltCat'] AS VARCHAR)      AS flight_category,
-        CASE WHEN CAST(PARSE_JSON(payload)['wdir'] AS VARCHAR) RLIKE '^[0-9]+$'
-             THEN CAST(PARSE_JSON(payload)['wdir'] AS INTEGER) END AS wind_dir_degrees,
-        CAST(PARSE_JSON(payload)['wspd'] AS INTEGER)        AS wind_speed_kt,
-        CAST(PARSE_JSON(payload)['visib'] AS VARCHAR)       AS visibility_sm,
-        CAST(PARSE_JSON(payload)['rawOb'] AS VARCHAR)       AS wx_string,
-        ROW_NUMBER() OVER (PARTITION BY CAST(PARSE_JSON(payload)['icaoId'] AS VARCHAR)
-                           ORDER BY CAST(PARSE_JSON(payload)['reportTime'] AS TIMESTAMP) DESC) AS rn
-    FROM faa_ingest_metar_raw
+        icaoId                        AS station_id,
+        CAST(reportTime AS TIMESTAMP) AS observed_at,
+        fltCat                        AS flight_category,
+        CASE WHEN wdir RLIKE '^[0-9]+$' THEN CAST(wdir AS INTEGER) END AS wind_dir_degrees,
+        wspd                          AS wind_speed_kt,
+        visib                         AS visibility_sm,
+        rawOb                         AS wx_string,
+        ROW_NUMBER() OVER (PARTITION BY icaoId
+                           ORDER BY CAST(reportTime AS TIMESTAMP) DESC) AS rn
+    FROM faa_ingest_metar_kafka
 ) WHERE rn = 1;
 
 -- Active restrictions per airport (latest per airport+type, 2h freshness).
@@ -501,6 +526,27 @@ AS SELECT * FROM arrival_incident_state;
 -- dashboard clears a bin on retraction).
 CREATE MATERIALIZED VIEW fl_arrival_demand_sink
 AS SELECT * FROM capacity_assessment;
+
+-- Reverse Kafka leg → nisshi (the "both directions" showcase). Feldera hands the
+-- normalized/validated latest-per-station weather BACK to nisshi via its NATIVE
+-- kafka_output connector (topic aviation.metar.normalized) — so nisshi is a full Kafka
+-- peer: it feeds Feldera (kafka_input, §1) AND receives from it here. This is additive:
+-- the Solace sinks above are unchanged and still carry the incident/brief to the mesh.
+-- update_format=insert_delete so a superseded station report emits a delete.
+-- ${NISSHI_BOOTSTRAP} is substituted by init.sh.
+CREATE MATERIALIZED VIEW nisshi_metar_normalized
+WITH (
+    'connectors' = '[{
+        "transport": { "name": "kafka_output", "config": {
+            "topic": "aviation.metar.normalized",
+            "bootstrap.servers": "${NISSHI_BOOTSTRAP}"
+        }},
+        "format": { "name": "json", "config": { "update_format": "insert_delete", "array": false } }
+    }]'
+)
+AS SELECT station_id, observed_at, flight_category, wind_dir_degrees,
+          wind_speed_kt, visibility_sm, wx_string
+   FROM metar_latest;
 
 
 -- ═════════════════════════════════════════════════════════════════════════════
