@@ -6,8 +6,11 @@
 # Bring it all up with `make up` (compose up + wait + deploy the premade solution),
 # or `docker compose up -d --build` then `make apply && make apply-reference`.
 #
-# Data plane is fully Solace-native: flights (FDPS), rates (TTP Airport Information),
-# ETAs (TTPFD), METAR and restrictions (TMR) all arrive over Solace — no database, no CDC.
+# Data plane is Solace-native: flights (FDPS), rates (TTP Airport Information), ETAs
+# (TTPFD) and restrictions (TMR) all arrive over Solace — no database, no CDC. ONE feed,
+# METAR, rides the nisshi Kafka on-ramp instead: Feldera reads it via native kafka_input
+# and writes a normalized view back via kafka_output, while the pipeline still sinks to
+# Solace through the sidecar (nisshi feeds the mesh *through* Feldera). See CLAUDE.md.
 #
 # Prerequisites that are NOT in this repo (see README):
 #   * the SAM runtime image (private Solace ECR) — `aws ecr get-login-password | docker login …`
@@ -57,6 +60,45 @@ services:
       retries: 40
       start_period: 15s
 
+  # ── nisshi: Apache Kafka®-compatible broker (Solace-backed, OSS) ──────────────
+  # The Kafka on-ramp. One feed (METAR) is produced here over the Kafka protocol
+  # instead of Solace SMF; Feldera reads it with its NATIVE kafka_input connector and
+  # writes a normalized view back via kafka_output (see faa_program.sql §9/§10). The
+  # arrival-capacity pipeline still sinks to Solace through the sidecar unchanged — so
+  # nisshi feeds the Solace mesh *through* Feldera. Single static binary, in-memory
+  # storage (ephemeral, matching the demo's no-persist ethos). The advertised listener
+  # MUST be the compose hostname so in-network clients (feed, scenario, feldera)
+  # connect to nisshi:9092. The image is scratch-based (no shell) → no healthcheck;
+  # dependents gate on the nisshi-topics one-shot completing instead.
+  nisshi:
+    image: ${NISSHI_IMAGE:-ghcr.io/nisshi-io/nisshi:latest}
+    # `broker` is the default command; the advertised listener MUST be the compose
+    # hostname so in-network clients (feed/scenario/feldera) connect to nisshi:9092.
+    command: ["broker", "--advertised-listener-url", "tcp://nisshi:9092"]
+    environment:
+      # Belt-and-suspenders with the nisshi-topics one-shot: auto-create removes any
+      # topic-existence race for the kafka_input/kafka_output topics. Storage defaults
+      # to memory:// (ephemeral), matching the demo's no-persist ethos.
+      - AUTO_CREATE_TOPICS_ENABLE=true
+    ports:
+      - "9092:9092"   # Kafka bootstrap (also host-reachable for `make nisshi-peek`)
+    restart: unless-stopped
+
+  # ── One-shot: pre-create the two nisshi topics ────────────────────────────────
+  # nisshi does not auto-create topics on produce, and Feldera's kafka_output needs the
+  # output topic to exist at pipeline start — so create both BEFORE init starts the
+  # pipeline and before the producers bind. Reuses the feed image (ships kafka-python).
+  nisshi-topics:
+    build:
+      context: ./stack/feed
+    command: ["python", "create_topics.py"]
+    depends_on:
+      nisshi: { condition: service_started }
+    environment:
+      - NISSHI_BOOTSTRAP=${NISSHI_BOOTSTRAP:-nisshi:9092}
+      - NISSHI_TOPICS=${NISSHI_TOPICS:-aviation.metar,aviation.metar.normalized}
+    restart: "no"
+
   # ── One-shot init: broker queue setup + load/start the base Continuum pipeline ─
   # Loads stack/config/feldera/faa_program.sql. Enables REST 9000 on the VPN.
   init:
@@ -66,6 +108,9 @@ services:
     depends_on:
       solace: { condition: service_healthy }
       feldera: { condition: service_healthy }
+      # nisshi topics must exist before the pipeline starts (Feldera's kafka_input/
+      # kafka_output connectors bind at start). nisshi-topics → nisshi (started).
+      nisshi-topics: { condition: service_completed_successfully }
     environment:
       - SOLACE_ADMIN_PASSWORD=${SOLACE_ADMIN_PASSWORD:-admin}
       - FL_HOST=feldera
@@ -76,6 +121,8 @@ services:
       - FL_SOLACE_VPN=${SOLACE_VPN:-default}
       - FL_SOLACE_USER=${SOLACE_USER:-default}
       - FL_SOLACE_PASSWORD=${SOLACE_PASSWORD:-default}
+      # Substituted into the Feldera kafka_input/kafka_output connector JSON by init.sh.
+      - NISSHI_BOOTSTRAP=${NISSHI_BOOTSTRAP:-nisshi:9092}
     restart: "no"
 
   # ── feldera-solace sidecar: bridges Solace ⇄ stock Feldera over HTTP ──────────
@@ -112,6 +159,7 @@ services:
       context: ./stack/feed
     depends_on:
       init: { condition: service_completed_successfully }
+      nisshi: { condition: service_started }   # METAR is produced to nisshi (Kafka), not SMF
     environment:
       - SOLACE_HOST=${SOLACE_HOST:-tcp://solace:55555}
       - SOLACE_VPN=${SOLACE_VPN:-default}
@@ -120,6 +168,10 @@ services:
       - REPLAY_SPEED=${REPLAY_SPEED:-1.0}
       - REPLAY_LOOP=${REPLAY_LOOP:-true}
       - DATA_DIR=/data
+      # METAR rides nisshi (Kafka): records on the aviation/metar/ prefix are produced
+      # here instead of Solace SMF. Everything else still goes to Solace.
+      - NISSHI_BOOTSTRAP=${NISSHI_BOOTSTRAP:-nisshi:9092}
+      - NISSHI_METAR_TOPIC=${NISSHI_METAR_TOPIC:-aviation.metar}
     volumes:
       # Captured SWIM message corpus (committed samples; refresh with stack/data/capture.py)
       - ./stack/data:/data:ro
@@ -131,11 +183,16 @@ services:
       context: ./stack/scenario
     depends_on:
       init: { condition: service_completed_successfully }
+      nisshi: { condition: service_started }   # the wind-shift METAR is produced to nisshi (Kafka)
     environment:
       - SOLACE_HOST=${SOLACE_HOST:-tcp://solace:55555}
       - SOLACE_VPN=${SOLACE_VPN:-default}
       - SOLACE_USER=${SOLACE_USER:-default}
       - SOLACE_PASSWORD=${SOLACE_PASSWORD:-default}
+      # The degraded wind-shift METAR must reach Feldera the same way as the baseline —
+      # via nisshi (Kafka), not SMF — or the System-2 brief won't see the shifted wind.
+      - NISSHI_BOOTSTRAP=${NISSHI_BOOTSTRAP:-nisshi:9092}
+      - NISSHI_METAR_TOPIC=${NISSHI_METAR_TOPIC:-aviation.metar}
       - HERO_AIRPORT=${HERO_AIRPORT:-KEWR}
       - NORMAL_AAR=${NORMAL_AAR:-44}
       - DEGRADED_AAR=${DEGRADED_AAR:-26}

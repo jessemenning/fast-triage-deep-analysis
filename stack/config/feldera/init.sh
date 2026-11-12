@@ -2,8 +2,11 @@
 # init.sh — Feldera pipeline setup for FAA Fast/Slow (API v0.306+).
 # One-shot init container; exits 0 on success.
 #
-# Fully Solace-native data plane — NO Postgres, NO postgres_cdc_input, so NO
-# reset_stale_cdc_state self-heal is needed (cf. the CDC sibling demos).
+# Solace-native data plane — NO Postgres, NO postgres_cdc_input, so NO
+# reset_stale_cdc_state self-heal is needed (cf. the CDC sibling demos). ONE feed
+# (METAR) rides the nisshi Kafka on-ramp: Feldera reads it via native kafka_input and
+# writes aviation.metar.normalized back via kafka_output. ${NISSHI_BOOTSTRAP} is
+# substituted into those connector configs by prepare_sql() below, same as the Solace vars.
 #
 # Steps:
 #   1. Wait for Feldera /healthz
@@ -77,6 +80,7 @@ prepare_sql() {
         -e "s|\${FL_SOLACE_VPN}|${FL_SOLACE_VPN:-default}|g" \
         -e "s|\${FL_SOLACE_USER}|${FL_SOLACE_USER:-default}|g" \
         -e "s|\${FL_SOLACE_PASSWORD}|${FL_SOLACE_PASSWORD:-default}|g" \
+        -e "s|\${NISSHI_BOOTSTRAP}|${NISSHI_BOOTSTRAP:-nisshi:9092}|g" \
         "${SQL_FILE}" > /tmp/faa_program_applied.sql
     log "SQL prepared ($(wc -c < /tmp/faa_program_applied.sql) bytes)."
 }

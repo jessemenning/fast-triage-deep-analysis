@@ -176,6 +176,12 @@ new-solution: ## One-command deploy+wire+verify of an authored generated solutio
 ops: ## Watch triggers and decisions on the mesh
 	python3 demo/ops-console.py
 
+.PHONY: nisshi-peek
+nisshi-peek: ## Tail a nisshi Kafka topic to prove the on-ramp [TOPIC=aviation.metar|aviation.metar.normalized N=10]
+	@$(COMPOSE) run --rm --no-deps \
+	  -e PEEK_TOPIC=$(or $(TOPIC),aviation.metar.normalized) -e PEEK_N=$(or $(N),10) \
+	  feed python nisshi_peek.py
+
 .PHONY: demo
 demo: ## Fire the wind shift at the hero airport (runway reconfig -> AAR drops + arrival burst -> breach)
 	demo/burst.sh

@@ -91,18 +91,9 @@ ingest:
       include_broker_timestamp: true
       topic_pattern: "TTP/restriction/{airport}/{restriction_type}"
 
-  - table: faa_ingest_metar_raw
-    payload_mode: wrap
-    solace:
-      host: ${FL_SOLACE_HOSTNAME}
-      port: ${FL_SOLACE_PORT}
-      vpn: ${FL_SOLACE_VPN}
-      username: ${FL_SOLACE_USER}
-      password: ${FL_SOLACE_PASSWORD}
-      queue: fl-aviation-metar
-      include_topic: true
-      include_broker_timestamp: true
-      topic_pattern: "aviation/metar/{station_id}"
+  # NOTE: METAR is NOT bridged here. It rides the nisshi Kafka on-ramp and Feldera
+  # reads it with its native kafka_input connector (see faa_program.sql §1), so there
+  # is no sidecar ingest and no fl-aviation-metar queue for weather.
 
   - table: faa_ingest_reset_raw
     payload_mode: wrap

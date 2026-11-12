@@ -1,1 +1,2 @@
 solace-pubsubplus
+kafka-python==3.0.13

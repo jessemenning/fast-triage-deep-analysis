@@ -10,7 +10,8 @@ real SWIM/SCDS would):
      (AAR 44 -> 26, single-runway 4R config) — the versioned side input drops, so
      Feldera re-evaluates every affected arrival-demand bin;
   2. publishes a VFR-but-gusty METAR with the SHIFTED wind direction (SW ~210 -> NE ~040,
-     30G42) and a TMR runway-reconfiguration restriction (context the System-2 brief reads);
+     30G42) to the nisshi Kafka on-ramp (Feldera kafka_input), and a TMR runway-
+     reconfiguration restriction over Solace (context the System-2 brief reads);
   3. publishes a burst of extra inbound flights bunched into the near-term window,
      pushing rolling-hour demand above the reduced AAR — the breach fires.
 After a hold it restores the normal rate + wind + 22L|22R flow so the demo resets to green.
@@ -36,9 +37,14 @@ from solace.messaging.messaging_service import MessagingService
 from solace.messaging.resources.topic import Topic
 from solace.messaging.receiver.message_receiver import MessageHandler
 from solace.messaging.resources.topic_subscription import TopicSubscription
+from kafka import KafkaProducer
 
 CONTROL_TOPIC = "faa/scenario/windshift"
 RESET_TOPIC = "faa/scenario/reset"
+# METAR rides the nisshi Kafka on-ramp (Feldera kafka_input), not Solace SMF — the
+# degraded wind-shift weather must reach Feldera the same path as the baseline METAR.
+NISSHI_METAR_TOPIC = os.environ.get("NISSHI_METAR_TOPIC", "aviation.metar")
+NISSHI_BOOTSTRAP = os.environ.get("NISSHI_BOOTSTRAP", "nisshi:9092")
 ORIGINS = ["KSFO", "KLAX", "KDEN", "KDFW", "KMIA", "KSEA", "KMCO", "KCLT", "KMSP", "KSLC"]
 CARRIERS = ["UAL", "AAL", "DAL", "JBU", "SWA"]
 
@@ -89,11 +95,31 @@ def connect() -> MessagingService:
             time.sleep(delay)
 
 
+def connect_kafka() -> KafkaProducer:
+    """Connect to nisshi (Kafka) with the same cold-start backoff as connect() above."""
+    attempts = max(1, int(os.environ.get("CONNECT_MAX_ATTEMPTS", "30")))
+    for attempt in range(1, attempts + 1):
+        try:
+            producer = KafkaProducer(
+                bootstrap_servers=NISSHI_BOOTSTRAP.split(","),
+                acks=1, retries=5, linger_ms=50,
+            )
+            log(f"connected to nisshi (Kafka) at {NISSHI_BOOTSTRAP}")
+            return producer
+        except Exception as exc:  # nisshi not ready yet
+            if attempt >= attempts:
+                raise
+            delay = min(10.0, 2.0 * attempt)
+            log(f"nisshi not ready (attempt {attempt}/{attempts}): {exc}; retrying in {delay:.0f}s")
+            time.sleep(delay)
+
+
 class Scenario:
     def __init__(self, svc: MessagingService):
         self.svc = svc
         self.pub = svc.create_direct_message_publisher_builder().build()
         self.pub.start()
+        self.kafka = connect_kafka()   # METAR is produced to nisshi (Kafka), not SMF
         self._running = threading.Lock()
         self._abort = threading.Event()   # set by reset() to end a storm's HOLD early
 
@@ -107,10 +133,15 @@ class Scenario:
                     "runway_config": cfg, "effective_time": _ts()})
 
     def _metar(self, cat: str, wx: str, wspd: int, wdir: str) -> None:
-        self._send(f"aviation/metar/{HERO}",
-                   {"icaoId": HERO, "reportTime": _ts(), "fltCat": cat,
-                    "wdir": wdir, "wspd": wspd, "visib": "1" if cat == "IFR" else "10+",
-                    "rawOb": f"{HERO} {wx}"})
+        # METAR rides the nisshi Kafka on-ramp (Feldera kafka_input), NOT Solace SMF —
+        # so the degraded wind-shift weather reaches Feldera the same way the baseline
+        # METAR does. key = station; value = raw JSON bytes (kafka_input json format).
+        payload = {"icaoId": HERO, "reportTime": _ts(), "fltCat": cat,
+                   "wdir": wdir, "wspd": wspd, "visib": "1" if cat == "IFR" else "10+",
+                   "rawOb": f"{HERO} {wx}"}
+        self.kafka.send(NISSHI_METAR_TOPIC, key=HERO.encode("utf-8"),
+                        value=json.dumps(payload).encode("utf-8"))
+        self.kafka.flush()
 
     def run(self) -> None:
         # Wait briefly for the lock rather than dropping the trigger outright. A ↺ Reset
@@ -250,6 +281,11 @@ def main() -> int:
         pass
     finally:
         receiver.terminate()
+        try:
+            scenario.kafka.flush()
+            scenario.kafka.close()
+        except Exception:
+            pass
         svc.disconnect()
     return 0
 

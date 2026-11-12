@@ -14,8 +14,15 @@ window no matter when `make up` runs — the key trick behind "real but canned d
 Record shape (see stack/data/capture.py and the committed samples):
     {"delay": 0.25, "topic": "FDPS/position/UAL123/ACTIVE/.../GUFI1", "payload": {...}}
 
+METAR is the exception: records on the aviation/metar/ topic prefix are produced to the
+nisshi Kafka broker (topic NISSHI_METAR_TOPIC, key = station) instead of Solace, where
+Feldera reads them with its native kafka_input connector. Every other feed still goes
+to Solace over SMF.
+
 Env:
     SOLACE_HOST / SOLACE_VPN / SOLACE_USER / SOLACE_PASSWORD
+    NISSHI_BOOTSTRAP    nisshi Kafka bootstrap (default nisshi:9092)
+    NISSHI_METAR_TOPIC  Kafka topic for METAR (default aviation.metar)
     DATA_DIR      directory of *.jsonl corpus files (default /data)
     REPLAY_SPEED  1.0 = recorded pace, 2.0 = twice as fast (default 1.0)
     REPLAY_LOOP   loop the corpus forever when it ends (default true)
@@ -30,6 +37,7 @@ from datetime import datetime, timedelta, timezone
 
 from solace.messaging.messaging_service import MessagingService
 from solace.messaging.resources.topic import Topic
+from kafka import KafkaProducer
 
 REL_TOKEN = re.compile(r"^@(now|[+-]\d+)$")
 
@@ -37,6 +45,14 @@ REL_TOKEN = re.compile(r"^@(now|[+-]\d+)$")
 # looping replay doesn't re-assert the baseline and clobber the scenario driver's
 # degraded rate / IFR weather / restriction. Only the flight traffic loops.
 REFERENCE_PREFIXES = ("TTP/airportInfo/", "TTP/restriction/", "aviation/metar/")
+
+# METAR rides the nisshi Kafka on-ramp instead of Solace SMF: records whose (resolved)
+# topic starts with this prefix are produced to the nisshi Kafka topic (key = station),
+# where Feldera reads them with its native kafka_input connector. Everything else still
+# publishes to Solace. The pass-1-only REFERENCE_PREFIXES rule above is transport-agnostic.
+NISSHI_METAR_PREFIX = "aviation/metar/"
+NISSHI_METAR_TOPIC = os.environ.get("NISSHI_METAR_TOPIC", "aviation.metar")
+NISSHI_BOOTSTRAP = os.environ.get("NISSHI_BOOTSTRAP", "nisshi:9092")
 
 
 def log(msg: str) -> None:
@@ -107,6 +123,26 @@ def connect() -> MessagingService:
             time.sleep(delay)
 
 
+def connect_kafka() -> KafkaProducer:
+    """Connect to nisshi over the Kafka protocol, with the same cold-start backoff as
+    the Solace connect above (the broker can lag just after compose brings it up)."""
+    attempts = max(1, int(os.environ.get("CONNECT_MAX_ATTEMPTS", "30")))
+    for attempt in range(1, attempts + 1):
+        try:
+            producer = KafkaProducer(
+                bootstrap_servers=NISSHI_BOOTSTRAP.split(","),
+                acks=1, retries=5, linger_ms=50,
+            )
+            log(f"connected to nisshi (Kafka) at {NISSHI_BOOTSTRAP}")
+            return producer
+        except Exception as exc:  # nisshi not ready yet
+            if attempt >= attempts:
+                raise
+            delay = min(10.0, 2.0 * attempt)
+            log(f"nisshi not ready (attempt {attempt}/{attempts}): {exc}; retrying in {delay:.0f}s")
+            time.sleep(delay)
+
+
 def main() -> int:
     data_dir = os.environ.get("DATA_DIR", "/data")
     speed = float(os.environ.get("REPLAY_SPEED", "1.0")) or 1.0
@@ -120,6 +156,7 @@ def main() -> int:
     service = connect()
     publisher = service.create_direct_message_publisher_builder().build()
     publisher.start()
+    kafka = connect_kafka()   # nisshi on-ramp for the METAR feed
 
     try:
         passes = 0
@@ -137,9 +174,15 @@ def main() -> int:
                 now = datetime.now(timezone.utc)
                 topic = resolve_tokens(topic, now)
                 payload = resolve_tokens(rec.get("payload", {}), now)
-                body = bytearray(json.dumps(payload), "utf-8")  # raw bytes — PARSE_JSON needs it
-                msg = service.message_builder().build(body)
-                publisher.publish(destination=Topic.of(topic), message=msg)
+                body = bytearray(json.dumps(payload), "utf-8")  # raw bytes — PARSE_JSON / kafka_input need it
+                if topic.startswith(NISSHI_METAR_PREFIX):
+                    # nisshi (Kafka): key = station (last topic segment) → Feldera kafka_input
+                    station = topic.rsplit("/", 1)[-1]
+                    kafka.send(NISSHI_METAR_TOPIC, key=station.encode("utf-8"), value=bytes(body))
+                else:
+                    msg = service.message_builder().build(body)
+                    publisher.publish(destination=Topic.of(topic), message=msg)
+            kafka.flush()
             if not loop:
                 break
         log("replay complete")
@@ -147,6 +190,11 @@ def main() -> int:
     except KeyboardInterrupt:
         return 0
     finally:
+        try:
+            kafka.flush()
+            kafka.close()
+        except Exception:
+            pass
         try:
             publisher.terminate()
             service.disconnect()

@@ -11,7 +11,9 @@
 #   Queue: fl-ttp-rate         ← TTP/airportInfo/>          (TTP Airport Information: AAR/ADR)
 #   Queue: fl-ttp-eta          ← TTP/flightData/>           (TTPFD: per-flight ETA)
 #   Queue: fl-ttp-tmr          ← TTP/restriction/>          (TMR: GDP/APREQ/ground stop)
-#   Queue: fl-aviation-metar   ← aviation/metar/>
+#
+# METAR is NOT a Solace queue here — it rides the nisshi Kafka on-ramp instead, read by
+# Feldera's native kafka_input connector (see docker-compose.yml + faa_program.sql §1).
 #
 # The replay feed publishes captured SWIM messages to:
 #   FDPS/position/{flight_id}/{status}/{callsign}/{origin}/{destination}/{lat}/{lon}/{gs}/{alt}/{hdg}/{gufi}
@@ -19,7 +21,7 @@
 #   TTP/airportInfo/{airport}
 #   TTP/flightData/{gufi}/{arrival}/{eta_source}
 #   TTP/restriction/{airport}/{restriction_type}
-#   aviation/metar/{station_id}
+# (METAR goes to the nisshi Kafka topic aviation.metar, not Solace.)
 # and the scenario driver republishes TTP/airportInfo/{airport} to degrade the AAR.
 #
 # Usage: bash config/solace/setup.sh [SOLACE_HOST] [SEMP_PORT]
@@ -130,7 +132,7 @@ create_queue "fl-fdps-flightplan" "FDPS/flightPlan/>"         300
 create_queue "fl-ttp-rate"        "TTP/airportInfo/>"         600
 create_queue "fl-ttp-eta"         "TTP/flightData/>"          180
 create_queue "fl-ttp-tmr"         "TTP/restriction/>"         600
-create_queue "fl-aviation-metar"  "aviation/metar/>"          600
+# METAR has no Solace queue — it rides the nisshi Kafka on-ramp (Feldera kafka_input).
 # Reset-epoch marker: the UI ↺ Reset / API publishes faa/scenario/reset; Feldera ingests
 # it so capacity_assessment re-scores pre-reset (frozen-degraded) bins against the current
 # restored rate — a reset clears stale SEVERE bins at once instead of waiting ~1h to age out.
@@ -146,7 +148,7 @@ semp_patch "/msgVpns/${VPN}" \
 sleep 2
 
 log "Solace Platform configuration complete."
-log "  Queues: fl-fdps-position / fl-fdps-flightplan / fl-ttp-rate / fl-ttp-eta / fl-ttp-tmr / fl-aviation-metar / fl-faa-reset"
+log "  Queues: fl-fdps-position / fl-fdps-flightplan / fl-ttp-rate / fl-ttp-eta / fl-ttp-tmr / fl-faa-reset (METAR → nisshi/Kafka)"
 log "  DMQ:    dlq-fl-faa (self-draining, 300s TTL)"
 log "  MQTT WS: VPN port 8000 (host-mapped to 8008 for the browser)"
 log "  REST msg: VPN port 9000"
